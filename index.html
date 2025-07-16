@@ -53,10 +53,28 @@
       console.error('Firebase initialization error:', error.message);
     }
 
+    // Register service worker for push notifications
+    const registerServiceWorker = async () => {
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          console.log('Service worker registered:', registration);
+          return registration;
+        } catch (error) {
+          console.error('Service worker registration failed:', error.message);
+          alert('Failed to register service worker for notifications: ' + error.message);
+        }
+      } else {
+        console.log('Service workers not supported in this browser');
+        alert('Push notifications are not supported in this browser.');
+      }
+      return null;
+    };
+
     // Request notification permission
     const requestNotificationPermission = async () => {
-      if (!("Notification" in window)) {
-        console.log("Notifications not supported in this browser");
+      if (!("Notification" in window) && !('serviceWorker' in navigator)) {
+        console.log("Notifications and service workers not supported in this browser");
         alert("Notifications are not supported in this browser.");
         return false;
       }
@@ -64,7 +82,7 @@
         const permission = await Notification.requestPermission();
         console.log('Notification permission:', permission);
         if (permission !== 'granted') {
-          alert('Notification permission denied. You will not receive browser notifications.');
+          alert('Notification permission denied. You will not receive push notifications.');
         }
         return permission === 'granted';
       } catch (error) {
@@ -130,10 +148,16 @@
       const [pickedUpBy, setPickedUpBy] = useState('');
       const [editOrder, setEditOrder] = useState(null);
       const [recipientFilter, setRecipientFilter] = useState('');
+      const [serviceWorkerRegistration, setServiceWorkerRegistration] = useState(null);
 
-      // Request notification permission on mount
+      // Register service worker and request notification permission on mount
       useEffect(() => {
-        requestNotificationPermission();
+        const initializeNotifications = async () => {
+          const registration = await registerServiceWorker();
+          setServiceWorkerRegistration(registration);
+          await requestNotificationPermission();
+        };
+        initializeNotifications();
       }, []);
 
       // Fetch orders, archived orders, sets, and recipients from Firestore
@@ -236,6 +260,24 @@
         }
       };
 
+      const sendNotification = async (title, body) => {
+        if (serviceWorkerRegistration && Notification.permission === 'granted') {
+          try {
+            await serviceWorkerRegistration.showNotification(title, {
+              body,
+              icon: '/icon.png'
+            });
+            console.log('Notification sent via service worker:', title);
+          } catch (error) {
+            console.error('Error sending notification via service worker:', error.message);
+            alert(`${title}: ${body} (Failed to send notification: ${error.message})`);
+          }
+        } else {
+          console.log('Notifications not permitted or service worker not registered, using alert');
+          alert(`${title}: ${body}`);
+        }
+      };
+
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (!firebaseInitialized || !db || !storage) {
@@ -267,21 +309,7 @@
           console.log('Order saved successfully with ID:', docRef.id);
 
           // Send notification
-          if (Notification.permission === 'granted') {
-            try {
-              new Notification('New Order Created', {
-                body: `Order "${formData.itemName || 'Unknown'}" has been created for set "${formData.set || 'Unknown'}".`,
-                icon: '/icon.png'
-              });
-              console.log('Notification sent for order creation');
-            } catch (notificationError) {
-              console.error('Error sending notification:', notificationError.message);
-              alert('Order created, but failed to send notification: ' + notificationError.message);
-            }
-          } else {
-            console.log('Notifications not permitted, skipping notification');
-            alert('Order created, but notifications are disabled. Please enable browser notifications.');
-          }
+          await sendNotification('New Order Created', `Order "${formData.itemName || 'Unknown'}" has been created for set "${formData.set || 'Unknown'}".`);
 
           // Reset form to default values
           setFormData({
@@ -340,22 +368,8 @@
           console.log('Order marked as received successfully with timestamp:', receivedAt.toDate());
 
           // Send notification
-          if (Notification.permission === 'granted') {
-            try {
-              const order = orders.find(o => o.id === receivedOrderId) || {};
-              new Notification('Order Received', {
-                body: `Order "${order.itemName || 'Unknown'}" was received by ${pickedUpBy} for set "${order.set || 'Unknown'}".`,
-                icon: '/icon.png'
-              });
-              console.log('Notification sent for order receipt');
-            } catch (notificationError) {
-              console.error('Error sending notification:', notificationError.message);
-              alert('Order marked as received, but failed to send notification: ' + notificationError.message);
-            }
-          } else {
-            console.log('Notifications not permitted, skipping notification');
-            alert('Order marked as received, but notifications are disabled. Please enable browser notifications.');
-          }
+          const order = orders.find(o => o.id === receivedOrderId) || {};
+          await sendNotification('Order Received', `Order "${order.itemName || 'Unknown'}" was received by ${pickedUpBy} for set "${order.set || 'Unknown'}".`);
 
           closeReceivedModal();
         } catch (error) {
@@ -565,67 +579,6 @@
         }
       };
 
-      // Function to check if order is new (within 7 days)
-      const isOrderNew = (order) => {
-        if (!order.timestamp) return false;
-        const now = new Date();
-        const orderDate = order.timestamp;
-        const diffDays = (now - orderDate) / (1000 * 60 * 60 * 24);
-        return diffDays <= 7;
-      };
-
-      // Print individual order as professional order form
-      const printOrderForm = (order) => {
-        console.log(`Generating order form for order: ${order.id}`);
-        try {
-          const doc = new jsPDF();
-          doc.setFontSize(18);
-          doc.text('Order Form', 20, 20);
-          doc.setFontSize(12);
-          doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 30);
-          doc.text('Set Hardware Management', 20, 40);
-          doc.setLineWidth(0.5);
-          doc.line(20, 45, 190, 45);
-
-          const tableData = [[
-            order.itemName || 'N/A',
-            order.pickupFrom || 'N/A',
-            order.orderNumber || 'N/A',
-            order.deliveryMethod || 'N/A',
-            order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`,
-            order.recipient || 'N/A',
-            order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received',
-            order.receivedAt ? order.receivedAt.toLocaleString() : 'N/A',
-            order.imageUrl || 'N/A'
-          ]];
-
-          doc.autoTable({
-            startY: 50,
-            head: [['Item Name', 'Pickup From', 'Order Number', 'Delivery', 'Dates', 'Recipient', 'Status', 'Received At', 'Image URL']],
-            body: tableData,
-            theme: 'grid',
-            styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak' },
-            columnStyles: {
-              0: { cellWidth: 25 },
-              1: { cellWidth: 20 },
-              2: { cellWidth: 20 },
-              3: { cellWidth: 15 },
-              4: { cellWidth: 25 },
-              5: { cellWidth: 20 },
-              6: { cellWidth: 20 },
-              7: { cellWidth: 20 },
-              8: { cellWidth: 25 }
-            }
-          });
-
-          doc.save(`Order_${order.orderNumber || order.id}.pdf`);
-          console.log(`Generated order form for order: ${order.id}`);
-        } catch (error) {
-          console.error('Error generating order form:', error.message);
-          setError(`Error generating order form: ${error.message}`);
-        }
-      };
-
       // Function to escape CSV values
       const escapeCsv = (str) => {
         if (!str) return '';
@@ -754,16 +707,56 @@
         }
       };
 
-      // Open modal with order details
-      const openOrderModal = (order) => {
-        setSelectedOrder(order);
-        console.log('Opening modal for order:', order.id);
-      };
+      // Print individual order as professional order form
+      const printOrderForm = (order) => {
+        console.log(`Generating order form for order: ${order.id}`);
+        try {
+          const doc = new jsPDF();
+          doc.setFontSize(18);
+          doc.text('Order Form', 20, 20);
+          doc.setFontSize(12);
+          doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 30);
+          doc.text('Set Hardware Management', 20, 40);
+          doc.setLineWidth(0.5);
+          doc.line(20, 45, 190, 45);
 
-      // Close modal
-      const closeOrderModal = () => {
-        setSelectedOrder(null);
-        console.log('Closing modal');
+          const tableData = [[
+            order.itemName || 'N/A',
+            order.pickupFrom || 'N/A',
+            order.orderNumber || 'N/A',
+            order.deliveryMethod || 'N/A',
+            order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`,
+            order.recipient || 'N/A',
+            order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received',
+            order.receivedAt ? order.receivedAt.toLocaleString() : 'N/A',
+            order.imageUrl || 'N/A'
+          ]];
+
+          doc.autoTable({
+            startY: 50,
+            head: [['Item Name', 'Pickup From', 'Order Number', 'Delivery', 'Dates', 'Recipient', 'Status', 'Received At', 'Image URL']],
+            body: tableData,
+            theme: 'grid',
+            styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak' },
+            columnStyles: {
+              0: { cellWidth: 25 },
+              1: { cellWidth: 20 },
+              2: { cellWidth: 20 },
+              3: { cellWidth: 15 },
+              4: { cellWidth: 25 },
+              5: { cellWidth: 20 },
+              6: { cellWidth: 20 },
+              7: { cellWidth: 20 },
+              8: { cellWidth: 25 }
+            }
+          });
+
+          doc.save(`Order_${order.orderNumber || order.id}.pdf`);
+          console.log(`Generated order form for order: ${order.id}`);
+        } catch (error) {
+          console.error('Error generating order form:', error.message);
+          setError(`Error generating order form: ${error.message}`);
+        }
       };
 
       // Define active and completed orders
@@ -1087,10 +1080,7 @@
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredActiveOrders.map(order => (
-                      <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300 relative">
-                        {isOrderNew(order) && (
-                          <span className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">New</span>
-                        )}
+                      <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
                         <h3 className="text-xl font-semibold mb-2">{order.itemName || 'N/A'}</h3>
                         <p><strong>Pickup From:</strong> {order.pickupFrom || 'N/A'}</p>
                         <p><strong>Order Number:</strong> {order.orderNumber || 'N/A'}</p>
@@ -1384,10 +1374,7 @@
                         {groupedCompletedOrders[setName]
                           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
                           .map(order => (
-                            <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300 relative">
-                              {isOrderNew(order) && (
-                                <span className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">New</span>
-                              )}
+                            <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
                               <h4 className="text-lg font-semibold mb-2">{order.itemName || 'N/A'}</h4>
                               <p><strong>Pickup From:</strong> {order.pickupFrom || 'N/A'}</p>
                               <p><strong>Order Number:</strong> {order.orderNumber || 'N/A'}</p>
@@ -1482,10 +1469,7 @@
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {groupedArchivedOrders[setName].map(order => (
-                          <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300 relative">
-                            {isOrderNew(order) && (
-                              <span className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">New</span>
-                            )}
+                          <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
                             <h4 className="text-lg font-semibold mb-2">{order.itemName || 'N/A'}</h4>
                             <p><strong>Pickup From:</strong> {order.pickupFrom || 'N/A'}</p>
                             <p><strong>Order Number:</strong> {order.orderNumber || 'N/A'}</p>

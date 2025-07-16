@@ -38,13 +38,15 @@
 
     // Initialize Firebase
     let db, storage;
+    let firebaseInitialized = false;
     try {
       const app = firebase.initializeApp(firebaseConfig);
       db = firebase.getFirestore(app);
       storage = firebase.getStorage(app);
+      firebaseInitialized = true;
       console.log('Firebase initialized successfully');
     } catch (error) {
-      console.error('Firebase initialization error:', error);
+      console.error('Firebase initialization error:', error.message);
     }
 
     function App() {
@@ -70,15 +72,17 @@
       const [newRecipient, setNewRecipient] = useState('');
       const [uploading, setUploading] = useState(false);
       const [error, setError] = useState(null);
+      const [selectedOrder, setSelectedOrder] = useState(null);
 
       // Fetch orders, archived orders, sets, and recipients from Firestore
       useEffect(() => {
-        if (!db) {
+        if (!firebaseInitialized || !db) {
           console.error('Firestore database not initialized');
-          setError('Firestore database not initialized');
+          setError('Firestore database not initialized. Please check Firebase configuration.');
           return;
         }
 
+        console.log('Setting up Firestore listeners...');
         // Fetch orders
         const unsubscribeOrders = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
           const ordersData = snapshot.docs.map(doc => ({
@@ -88,7 +92,7 @@
           console.log('Fetched orders:', ordersData);
           setOrders(ordersData);
         }, (err) => {
-          console.error('Firestore fetch error (orders):', err);
+          console.error('Firestore fetch error (orders):', err.message, err.code);
           setError(`Failed to fetch orders: ${err.message}`);
         });
 
@@ -101,7 +105,7 @@
           console.log('Fetched archived orders:', archivedData);
           setArchivedOrders(archivedData);
         }, (err) => {
-          console.error('Firestore fetch error (archive):', err);
+          console.error('Firestore fetch error (archive):', err.message, err.code);
           setError(`Failed to fetch archived orders: ${err.message}`);
         });
 
@@ -114,7 +118,7 @@
           console.log('Fetched sets:', setsData);
           setSets(setsData);
         }, (err) => {
-          console.error('Firestore fetch error (sets):', err);
+          console.error('Firestore fetch error (sets):', err.message, err.code);
           setError(`Failed to fetch sets: ${err.message}`);
         });
 
@@ -127,11 +131,12 @@
           console.log('Fetched recipients:', recipientsData);
           setRecipients(recipientsData);
         }, (err) => {
-          console.error('Firestore fetch error (recipients):', err);
+          console.error('Firestore fetch error (recipients):', err.message, err.code);
           setError(`Failed to fetch recipients: ${err.message}`);
         });
 
         return () => {
+          console.log('Cleaning up Firestore listeners');
           unsubscribeOrders();
           unsubscribeArchived();
           unsubscribeSets();
@@ -147,12 +152,13 @@
       const handleImageChange = (e) => {
         if (e.target.files[0]) {
           setImage(e.target.files[0]);
+          console.log('Selected image:', e.target.files[0].name, 'Size:', e.target.files[0].size);
         }
       };
 
       const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!db || !storage) {
+        if (!firebaseInitialized || !db || !storage) {
           console.error('Firebase not initialized for submit');
           setError('Firebase not initialized. Check configuration.');
           return;
@@ -164,18 +170,18 @@
           let imageUrl = '';
           if (image) {
             console.log('Uploading image:', image.name);
-            const storageRef = firebase.ref(storage, `images/${image.name}`);
+            const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
             await firebase.uploadBytes(storageRef, image);
             imageUrl = await firebase.getDownloadURL(storageRef);
-            console.log('Image uploaded, URL:', imageUrl);
+            console.log('Image uploaded successfully, URL:', imageUrl);
           }
 
           const orderData = { ...formData, imageUrl, timestamp: new Date() };
           console.log('Submitting order:', orderData);
-          await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
-          console.log('Order saved successfully');
+          const docRef = await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
+          console.log('Order saved successfully with ID:', docRef.id);
 
-          // Reset form
+          // Reset form to default values
           setFormData({
             itemName: '',
             pickupFrom: '',
@@ -189,17 +195,18 @@
             pickedUpBy: ''
           });
           setImage(null);
+          document.querySelector('input[type="file"]').value = ''; // Reset file input
           alert('Order submitted successfully!');
         } catch (error) {
-          console.error('Error submitting order:', error);
-          setError(`Error submitting order: ${error.message}`);
+          console.error('Error submitting order:', error.message, error.code);
+          setError(`Error submitting order: ${error.message} (Code: ${error.code})`);
         } finally {
           setUploading(false);
         }
       };
 
       const toggleReceived = async (id, currentStatus, pickedUpBy) => {
-        if (!db) {
+        if (!firebaseInitialized || !db) {
           console.error('Firestore not initialized for toggleReceived');
           setError('Firebase not initialized.');
           return;
@@ -212,28 +219,33 @@
           });
           console.log('Received status updated successfully');
         } catch (error) {
-          console.error('Error updating received status:', error);
-          setError(`Error updating status: ${error.message}`);
+          console.error('Error updating received status:', error.message, error.code);
+          setError(`Error updating status: ${error.message} (Code: ${error.code})`);
         }
       };
 
       const addSet = async (e) => {
         e.preventDefault();
-        if (!db || !newSet.trim()) return;
+        if (!firebaseInitialized || !db || !newSet.trim()) {
+          console.error('Firestore not initialized or empty set name');
+          setError('Cannot add set: Firebase not initialized or set name is empty.');
+          return;
+        }
         try {
           console.log('Adding set:', newSet.trim());
-          await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
-          console.log('Set added successfully');
+          const docRef = await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
+          console.log('Set added successfully with ID:', docRef.id);
           setNewSet('');
         } catch (error) {
-          console.error('Error adding set:', error);
-          setError(`Error adding set: ${error.message}`);
+          console.error('Error adding set:', error.message, error.code);
+          setError(`Error adding set: ${error.message} (Code: ${error.code})`);
         }
       };
 
       const deleteSet = async (id, setName) => {
-        if (!db) {
+        if (!firebaseInitialized || !db) {
           console.error('Firestore not initialized for deleteSet');
+          setError('Firebase not initialized.');
           return;
         }
         if (!window.confirm(`Are you sure you want to delete the set "${setName}"? All associated orders will be archived.`)) return;
@@ -254,20 +266,22 @@
           await batch.commit();
           console.log('Set deleted and orders archived successfully');
         } catch (error) {
-          console.error('Error deleting set:', error);
-          setError(`Error deleting set or archiving orders: ${error.message}`);
+          console.error('Error deleting set:', error.message, error.code);
+          setError(`Error deleting set or archiving orders: ${error.message} (Code: ${error.code})`);
         }
       };
 
       const restoreSet = async (setName) => {
-        if (!db) {
+        if (!firebaseInitialized || !db) {
           console.error('Firestore not initialized for restoreSet');
+          setError('Firebase not initialized.');
           return;
         }
         try {
           console.log(`Restoring set ${setName}`);
           const batch = firebase.writeBatch(db);
-          batch.set(firebase.doc(firebase.collection(db, 'sets')), { name: setName });
+          const setDocRef = firebase.doc(firebase.collection(db, 'sets'));
+          batch.set(setDocRef, { name: setName });
 
           const archivedQuery = firebase.query(firebase.collection(db, 'archive'), firebase.where('set', '==', setName));
           const archivedSnapshot = await firebase.getDocs(archivedQuery);
@@ -280,30 +294,35 @@
           });
 
           await batch.commit();
-          console.log('Set restored successfully');
+          console.log('Set restored successfully with ID:', setDocRef.id);
         } catch (error) {
-          console.error('Error restoring set:', error);
-          setError(`Error restoring set: ${error.message}`);
+          console.error('Error restoring set:', error.message, error.code);
+          setError(`Error restoring set: ${error.message} (Code: ${error.code})`);
         }
       };
 
       const addRecipient = async (e) => {
         e.preventDefault();
-        if (!db || !newRecipient.trim()) return;
+        if (!firebaseInitialized || !db || !newRecipient.trim()) {
+          console.error('Firestore not initialized or empty recipient name');
+          setError('Cannot add recipient: Firebase not initialized or recipient name is empty.');
+          return;
+        }
         try {
           console.log('Adding recipient:', newRecipient.trim());
-          await firebase.addDoc(firebase.collection(db, 'recipients'), { name: newRecipient.trim() });
-          console.log('Recipient added successfully');
+          const docRef = await firebase.addDoc(firebase.collection(db, 'recipients'), { name: newRecipient.trim() });
+          console.log('Recipient added successfully with ID:', docRef.id);
           setNewRecipient('');
         } catch (error) {
-          console.error('Error adding recipient:', error);
-          setError(`Error adding recipient: ${error.message}`);
+          console.error('Error adding recipient:', error.message, error.code);
+          setError(`Error adding recipient: ${error.message} (Code: ${error.code})`);
         }
       };
 
       const deleteRecipient = async (id) => {
-        if (!db) {
+        if (!firebaseInitialized || !db) {
           console.error('Firestore not initialized for deleteRecipient');
+          setError('Firebase not initialized.');
           return;
         }
         try {
@@ -311,9 +330,104 @@
           await firebase.deleteDoc(firebase.doc(db, 'recipients', id));
           console.log('Recipient deleted successfully');
         } catch (error) {
-          console.error('Error deleting recipient:', error);
-          setError(`Error deleting recipient: ${error.message}`);
+          console.error('Error deleting recipient:', error.message, error.code);
+          setError(`Error deleting recipient: ${error.message} (Code: ${error.code})`);
         }
+      };
+
+      // Function to escape LaTeX special characters
+      const escapeLatex = (str) => {
+        if (!str) return '';
+        return str.replace(/([&%$#_{}])/g, '\\$1')
+                 .replace(/\\/g, '\\textbackslash')
+                 .replace(/~/g, '\\textasciitilde')
+                 .replace(/\^/g, '\\textasciicircum');
+      };
+
+      // Generate LaTeX for PDF export
+      const generateLatex = (orders, title) => {
+        const groupedOrders = orders.reduce((acc, order) => {
+          const setName = order.set || 'Unknown Set';
+          if (!acc[setName]) acc[setName] = [];
+          acc[setName].push(order);
+          return acc;
+        }, {});
+
+        let latexContent = `
+\\documentclass{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage{geometry}
+\\geometry{a4paper, margin=1in}
+\\usepackage{booktabs}
+\\usepackage{longtable}
+\\usepackage{hyperref}
+\\usepackage{fancyhdr}
+\\pagestyle{fancy}
+\\fancyhf{}
+\\fancyhead[C]{Hardware Order Report}
+\\fancyfoot[C]{\\thepage}
+\\title{${escapeLatex(title)}}
+\\author{}
+\\date{${new Date().toLocaleDateString()}}
+\\begin{document}
+\\maketitle
+`;
+
+        Object.keys(groupedOrders).sort().forEach(setName => {
+          latexContent += `
+\\section*{Set: ${escapeLatex(setName)}}
+\\begin{longtable}{p{4cm}p{3cm}p{3cm}p{3cm}p{4cm}p{3cm}p{3cm}}
+\\toprule
+Item Name & Pickup From & Order Number & Delivery & Shipping Dates & Recipient & Status \\\\
+\\midrule
+`;
+          groupedOrders[setName]
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+            .forEach(order => {
+              const status = order.received ? `Received${order.pickedUpBy ? ' by ' + escapeLatex(order.pickedUpBy) : ''}` : 'Not Received';
+              latexContent += `
+${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLatex(order.orderNumber)} & ${escapeLatex(order.deliveryMethod)} & ${escapeLatex(order.startDate)} to ${escapeLatex(order.endDate)} & ${escapeLatex(order.recipient)} & ${escapeLatex(status)} \\\\
+`;
+              if (order.imageUrl) {
+                latexContent += `\\multicolumn{7}{l}{\\href{${order.imageUrl}}{Image Link}} \\\\`;
+              }
+            });
+          latexContent += `
+\\bottomrule
+\\end{longtable}
+`;
+        });
+
+        latexContent += `
+\\end{document}
+`;
+        return latexContent;
+      };
+
+      // Export PDF for a given set of orders
+      const exportToPDF = (orders, title) => {
+        console.log(`Exporting PDF for ${title}`);
+        const latexContent = generateLatex(orders, title);
+        const blob = new Blob([latexContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title.replace(/\s+/g, '_')}.tex`;
+        a.click();
+        URL.revokeObjectURL(url);
+        console.log(`Generated LaTeX file for ${title}`);
+      };
+
+      // Open modal with order details
+      const openOrderModal = (order) => {
+        setSelectedOrder(order);
+        console.log('Opening modal for order:', order.id);
+      };
+
+      // Close modal
+      const closeOrderModal = () => {
+        setSelectedOrder(null);
+        console.log('Closing modal');
       };
 
       // Group archived orders by set
@@ -335,6 +449,18 @@
 
       // Active orders (not received)
       const activeOrders = orders.filter(order => !order.received);
+
+      // Fallback UI if Firebase is not initialized
+      if (!firebaseInitialized) {
+        return (
+          <div className="container mx-auto p-4">
+            <h1 className="text-3xl font-bold mb-6 text-center">Hardware Order Management</h1>
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              Error: Firebase not initialized. Please check your Firebase configuration and ensure the project is active.
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div className="container mx-auto p-4">
@@ -381,9 +507,52 @@
             </div>
           )}
 
+          {/* Order Modal */}
+          {selectedOrder && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+                <h2 className="text-2xl font-semibold mb-4">Order Details</h2>
+                <div className="space-y-4 text-lg">
+                  <p><strong>Item Name:</strong> {selectedOrder.itemName}</p>
+                  <p><strong>Pickup From:</strong> {selectedOrder.pickupFrom}</p>
+                  <p><strong>Order Number:</strong> {selectedOrder.orderNumber}</p>
+                  <p><strong>Delivery:</strong> {selectedOrder.deliveryMethod}</p>
+                  <p><strong>Shipping Dates:</strong> {selectedOrder.startDate} to {selectedOrder.endDate}</p>
+                  <p><strong>Set:</strong> {selectedOrder.set}</p>
+                  <p><strong>Recipient:</strong> {selectedOrder.recipient}</p>
+                  <p><strong>Received:</strong> {selectedOrder.received ? 'Yes' : 'No'}</p>
+                  {selectedOrder.received && selectedOrder.pickedUpBy && (
+                    <p><strong>Picked Up By:</strong> {selectedOrder.pickedUpBy}</p>
+                  )}
+                  {selectedOrder.imageUrl && (
+                    <div>
+                      <p><strong>Image:</strong></p>
+                      <img src={selectedOrder.imageUrl} alt="Order item" className="w-full max-h-96 object-contain rounded" />
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={closeOrderModal}
+                  className="mt-6 w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Home Tab (Active Orders Only) */}
           {activeTab === 'home' && (
             <div>
+              <div className="flex justify-end mb-4">
+                <button
+                  onClick={() => exportToPDF(activeOrders, 'Active_Orders')}
+                  className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                  disabled={!firebaseInitialized}
+                >
+                  Export Active Orders to PDF
+                </button>
+              </div>
               <h2 className="text-2xl font-semibold mb-4">Active Orders</h2>
               {activeOrders.length === 0 ? (
                 <p className="text-gray-600">No active orders found.</p>
@@ -402,19 +571,23 @@
                       {order.imageUrl && (
                         <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
                       )}
-                      <div className="mt-2">
-                        <div className="flex space-x-2">
-                          <select
-                            onChange={(e) => toggleReceived(order.id, order.received, e.target.value)}
-                            className="w-full p-2 border rounded"
-                            defaultValue=""
-                          >
-                            <option value="" disabled>Select Pickup Person</option>
-                            {recipients.map(recipient => (
-                              <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                      <div className="mt-2 flex space-x-2">
+                        <select
+                          onChange={(e) => toggleReceived(order.id, order.received, e.target.value)}
+                          className="w-full p-2 border rounded"
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Select Pickup Person</option>
+                          {recipients.map(recipient => (
+                            <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => openOrderModal(order)}
+                          className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                        >
+                          Expand
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -516,7 +689,7 @@
                 </select>
                 <button
                   type="submit"
-                  disabled={uploading}
+                  disabled={uploading || !firebaseInitialized}
                   className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
                 >
                   {uploading ? 'Submitting...' : 'Submit Order'}
@@ -528,6 +701,15 @@
           {/* Completed Orders Tab */}
           {activeTab === 'completed' && (
             <div className="max-w-4xl mx-auto">
+              <div className="flex justify-end mb-4">
+                <button
+                  onClick={() => exportToPDF(completedOrders, 'Completed_Orders')}
+                  className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                  disabled={!firebaseInitialized}
+                >
+                  Export Completed Orders to PDF
+                </button>
+              </div>
               <h2 className="text-2xl font-semibold mb-4">Completed Orders</h2>
               {Object.keys(groupedCompletedOrders).length === 0 ? (
                 <p className="text-gray-600">No completed orders found.</p>
@@ -553,12 +735,20 @@
                             {order.imageUrl && (
                               <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
                             )}
-                            <button
-                              onClick={() => toggleReceived(order.id, order.received, '')}
-                              className="w-full bg-gray-500 text-white p-2 rounded hover:opacity-90 mt-2"
-                            >
-                              Undo Received
-                            </button>
+                            <div className="mt-2 flex space-x-2">
+                              <button
+                                onClick={() => toggleReceived(order.id, order.received, '')}
+                                className="w-full bg-gray-500 text-white p-2 rounded hover:bg-blue-600"
+                              >
+                                Undo Received
+                              </button>
+                              <button
+                                onClick={() => openOrderModal(order)}
+                                className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                              >
+                                Expand
+                              </button>
+                            </div>
                           </div>
                         ))}
                     </div>
@@ -586,7 +776,8 @@
                     />
                     <button
                       type="submit"
-                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                      disabled={!firebaseInitialized}
+                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
                     >
                       Add
                     </button>
@@ -598,6 +789,7 @@
                         <button
                           onClick={() => deleteSet(set.id, set.name)}
                           className="text-red-500 hover:text-red-700"
+                          disabled={!firebaseInitialized}
                         >
                           Delete
                         </button>
@@ -618,7 +810,8 @@
                     />
                     <button
                       type="submit"
-                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                      disabled={!firebaseInitialized}
+                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
                     >
                       Add
                     </button>
@@ -630,6 +823,7 @@
                         <button
                           onClick={() => deleteRecipient(recipient.id)}
                           className="text-red-500 hover:text-red-700"
+                          disabled={!firebaseInitialized}
                         >
                           Delete
                         </button>
@@ -644,6 +838,15 @@
           {/* Archive Tab */}
           {activeTab === 'archive' && (
             <div className="max-w-4xl mx-auto">
+              <div className="flex justify-end mb-4">
+                <button
+                  onClick={() => exportToPDF(archivedOrders, 'Archived_Orders')}
+                  className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                  disabled={!firebaseInitialized}
+                >
+                  Export Archived Orders to PDF
+                </button>
+              </div>
               <h2 className="text-2xl font-semibold mb-4">Archived Orders</h2>
               {Object.keys(groupedArchivedOrders).length === 0 ? (
                 <p className="text-gray-600">No archived orders found.</p>
@@ -655,6 +858,7 @@
                       <button
                         onClick={() => restoreSet(setName)}
                         className="bg-green-500 text-white p-2 rounded hover:bg-green-600"
+                        disabled={!firebaseInitialized}
                       >
                         Restore Set
                       </button>
@@ -675,6 +879,14 @@
                           {order.imageUrl && (
                             <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
                           )}
+                          <div className="mt-2">
+                            <button
+                              onClick={() => openOrderModal(order)}
+                              className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                            >
+                              Expand
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -691,7 +903,7 @@
     try {
       ReactDOM.render(<App />, document.getElementById('root'));
     } catch (error) {
-      console.error('React render error:', error);
+      console.error('React render error:', error.message);
       document.getElementById('root').innerHTML = '<div className="text-red-500 text-center">Error loading application: ' + error.message + '</div>';
     }
   </script>

@@ -12,11 +12,11 @@
   <!-- Load Firebase modular SDK -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
     // Expose Firebase functions to global scope for React app
-    window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, getStorage, ref, uploadBytes, getDownloadURL };
+    window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, Timestamp, getStorage, ref, uploadBytes, getDownloadURL };
   </script>
   <!-- Load jsPDF and jspdf-autotable -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -57,13 +57,20 @@
     const requestNotificationPermission = async () => {
       if (!("Notification" in window)) {
         console.log("Notifications not supported in this browser");
-        return;
+        alert("Notifications are not supported in this browser.");
+        return false;
       }
       try {
         const permission = await Notification.requestPermission();
         console.log('Notification permission:', permission);
+        if (permission !== 'granted') {
+          alert('Notification permission denied. You will not receive browser notifications.');
+        }
+        return permission === 'granted';
       } catch (error) {
         console.error('Error requesting notification permission:', error.message);
+        alert('Error requesting notification permission: ' + error.message);
+        return false;
       }
     };
 
@@ -140,7 +147,8 @@
         const unsubscribeOrders = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
           const ordersData = snapshot.docs.map(doc => ({
             id: doc.id,
-            ...doc.data()
+            ...doc.data(),
+            receivedAt: doc.data().receivedAt ? doc.data().receivedAt.toDate() : null
           }));
           console.log('Fetched orders:', ordersData);
           setOrders(ordersData);
@@ -152,7 +160,8 @@
         const unsubscribeArchived = firebase.onSnapshot(firebase.collection(db, 'archive'), (snapshot) => {
           const archivedData = snapshot.docs.map(doc => ({
             id: doc.id,
-            ...doc.data()
+            ...doc.data(),
+            receivedAt: doc.data().receivedAt ? doc.data().receivedAt.toDate() : null
           }));
           console.log('Fetched archived orders:', archivedData);
           setArchivedOrders(archivedData);
@@ -206,8 +215,14 @@
 
       const handleImageChange = (e) => {
         if (e.target.files[0]) {
-          setImage(e.target.files[0]);
-          console.log('Selected image:', e.target.files[0].name, 'Size:', e.target.files[0].size);
+          const file = e.target.files[0];
+          if (file.size > 5 * 1024 * 1024) { // Limit to 5MB
+            console.error('Image too large:', file.size);
+            setError('Image file is too large. Please select a file under 5MB.');
+            return;
+          }
+          setImage(file);
+          console.log('Selected image:', file.name, 'Size:', file.size);
         }
       };
 
@@ -216,6 +231,7 @@
         if (!firebaseInitialized || !db || !storage) {
           console.error('Firebase not initialized for submit');
           setError('Firebase not initialized. Check configuration.');
+          setUploading(false);
           return;
         }
         setUploading(true);
@@ -234,18 +250,27 @@
           const orderData = {
             ...formData,
             imageUrl,
-            timestamp: new Date()
+            timestamp: firebase.Timestamp.fromDate(new Date())
           };
-          console.log('Submitting order:', orderData);
+          console.log('Submitting order to Firestore:', orderData);
           const docRef = await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
           console.log('Order saved successfully with ID:', docRef.id);
 
           // Send notification
           if (Notification.permission === 'granted') {
-            new Notification('New Order Created', {
-              body: `Order "${formData.itemName}" has been created for set "${formData.set}".`,
-              icon: '/icon.png'
-            });
+            try {
+              new Notification('New Order Created', {
+                body: `Order "${formData.itemName}" has been created for set "${formData.set}".`,
+                icon: '/icon.png'
+              });
+              console.log('Notification sent for order creation');
+            } catch (notificationError) {
+              console.error('Error sending notification:', notificationError.message);
+              alert('Order created, but failed to send notification: ' + notificationError.message);
+            }
+          } else {
+            console.log('Notifications not permitted, skipping notification');
+            alert('Order created, but notifications are disabled. Please enable browser notifications.');
           }
 
           // Reset form to default values
@@ -295,21 +320,31 @@
           return;
         }
         try {
-          console.log(`Marking order ${receivedOrderId} as received by ${pickedUpBy}`);
+          const receivedAt = firebase.Timestamp.fromDate(new Date());
+          console.log(`Marking order ${receivedOrderId} as received by ${pickedUpBy} at ${receivedAt.toDate().toLocaleString()}`);
           await firebase.updateDoc(firebase.doc(db, 'orders', receivedOrderId), {
             received: true,
             pickedUpBy,
-            receivedAt: new Date()
+            receivedAt
           });
-          console.log('Order marked as received successfully');
+          console.log('Order marked as received successfully with timestamp:', receivedAt.toDate());
 
           // Send notification
           if (Notification.permission === 'granted') {
-            const order = orders.find(o => o.id === receivedOrderId);
-            new Notification('Order Received', {
-              body: `Order "${order.itemName}" was received by ${pickedUpBy} for set "${order.set}".`,
-              icon: '/icon.png'
-            });
+            try {
+              const order = orders.find(o => o.id === receivedOrderId);
+              new Notification('Order Received', {
+                body: `Order "${order.itemName}" was received by ${pickedUpBy} for set "${order.set}".`,
+                icon: '/icon.png'
+              });
+              console.log('Notification sent for order receipt');
+            } catch (notificationError) {
+              console.error('Error sending notification:', notificationError.message);
+              alert('Order marked as received, but failed to send notification: ' + notificationError.message);
+            }
+          } else {
+            console.log('Notifications not permitted, skipping notification');
+            alert('Order marked as received, but notifications are disabled. Please enable browser notifications.');
           }
 
           closeReceivedModal();
@@ -333,7 +368,7 @@
             receivedAt: !currentStatus ? null : null
           });
           console.log('Received status updated successfully');
-        } catch (error) {
+        } COVERED IN toggleReceived catch (error) {
           console.error('Error updating received status:', error.message, error.code);
           setError(`Error updating status: ${error.message} (Code: ${error.code})`);
         }
@@ -423,7 +458,7 @@
           setNewSet('');
         } catch (error) {
           console.error('Error adding set:', error.message, error.code);
-          setError(`Error adding set: ${error.message} (Code: ${err.code})`);
+          setError(`Error adding set: ${error.message} (Code: ${error.code})`);
         }
       };
 
@@ -443,7 +478,7 @@
           const batch = firebase.writeBatch(db);
           ordersSnapshot.forEach(doc => {
             const orderData = doc.data();
-            batch.set(firebase.doc(db, 'archive', doc.id), { ...orderData, archivedAt: new Date() });
+            batch.set(firebase.doc(db, 'archive', doc.id), { ...orderData, archivedAt: firebase.Timestamp.fromDate(new Date()) });
             batch.delete(firebase.doc(db, 'orders', doc.id));
           });
 
@@ -538,10 +573,10 @@
         let csvContent = 'Set,Item Name,Pickup From,Order Number,Delivery Method,Shipping Start Date,Shipping End Date,Delivery Date,Recipient,Received,Picked Up By,Received At,Image URL\n';
         Object.keys(groupedOrders).sort().forEach(setName => {
           groupedOrders[setName]
-            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+            .sort((a, b) => new Date(a.timestamp.toDate()) - new Date(b.timestamp.toDate()))
             .forEach(order => {
               const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
-              const receivedAt = order.receivedAt ? new Date(order.receivedAt).toLocaleString() : '';
+              const receivedAt = order.receivedAt ? order.receivedAt.toLocaleString() : '';
               csvContent += `${escapeCsv(setName)},${escapeCsv(order.itemName)},${escapeCsv(order.pickupFrom)},${escapeCsv(order.orderNumber)},${escapeCsv(order.deliveryMethod)},${escapeCsv(order.startDate || '')},${escapeCsv(order.endDate || '')},${escapeCsv(order.deliveryDate || '')},${escapeCsv(order.recipient)},${escapeCsv(status)},${escapeCsv(order.pickedUpBy || '')},${escapeCsv(receivedAt)},${escapeCsv(order.imageUrl || '')}\n`;
             });
         });
@@ -591,11 +626,11 @@
             y += 10;
 
             const tableData = groupedOrders[setName]
-              .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+              .sort((a, b) => new Date(a.timestamp.toDate()) - new Date(b.timestamp.toDate()))
               .map(order => {
                 const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
                 const dates = order.deliveryMethod === 'pickup' ? order.deliveryDate || '' : `${order.startDate || ''} to ${order.endDate || ''}`;
-                const receivedAt = order.receivedAt ? new Date(order.receivedAt).toLocaleString() : '';
+                const receivedAt = order.receivedAt ? order.receivedAt.toLocaleString() : '';
                 return [
                   order.itemName || '',
                   order.pickupFrom || '',
@@ -911,7 +946,7 @@
                     <p><strong>Picked Up By:</strong> {selectedOrder.pickedUpBy}</p>
                   )}
                   {selectedOrder.received && selectedOrder.receivedAt && (
-                    <p><strong>Received At:</strong> {new Date(selectedOrder.receivedAt).toLocaleString()}</p>
+                    <p><strong>Received At:</strong> {selectedOrder.receivedAt.toLocaleString()}</p>
                   )}
                   {selectedOrder.imageUrl && (
                     <div>
@@ -1229,7 +1264,7 @@
                     <h3 className="text-xl font-semibold mb-4">{setName}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {groupedCompletedOrders[setName]
-                        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                        .sort((a, b) => new Date(a.timestamp.toDate()) - new Date(b.timestamp.toDate()))
                         .map(order => (
                           <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
                             <h4 className="text-lg font-semibold mb-2">{order.itemName}</h4>
@@ -1243,7 +1278,7 @@
                               <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
                             )}
                             {order.receivedAt && (
-                              <p><strong>Received At:</strong> {new Date(order.receivedAt).toLocaleString()}</p>
+                              <p><strong>Received At:</strong> {order.receivedAt.toLocaleString()}</p>
                             )}
                             {order.imageUrl && (
                               <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
@@ -1332,7 +1367,7 @@
                             <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
                           )}
                           {order.received && order.receivedAt && (
-                            <p><strong>Received At:</strong> {new Date(order.receivedAt).toLocaleString()}</p>
+                            <p><strong>Received At:</strong> {order.receivedAt.toLocaleString()}</p>
                           )}
                           {order.imageUrl && (
                             <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />

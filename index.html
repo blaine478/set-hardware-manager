@@ -5,21 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Movie Industry Order Tracker</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js" onerror="loadFallbackFirebase()"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js" onerror="loadFallbackFirebase()"></script>
-  <!-- Fallback Firebase SDK -->
+  <!-- Firebase SDK with multiple fallbacks -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js" onerror="loadFallbackFirebase(0)"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js" onerror="loadFallbackFirebase(0)"></script>
   <script>
-    function loadFallbackFirebase() {
-      console.warn('Primary Firebase SDK failed to load. Attempting fallback CDN.');
-      const scripts = [
-        'https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-app.js',
-        'https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-firestore.js'
-      ];
+    let fallbackAttempt = 0;
+    const fallbackCDNs = [
+      ['https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-app.js', 'https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-firestore.js'],
+      ['https://unpkg.com/firebase@9.22.0/firebase-app.js', 'https://unpkg.com/firebase@9.22.0/firebase-firestore.js']
+    ];
+    function loadFallbackFirebase(attempt) {
+      if (attempt >= fallbackCDNs.length) {
+        console.error('All Firebase SDK fallback attempts failed.');
+        return;
+      }
+      console.warn(`Primary Firebase SDK failed. Trying fallback CDN ${attempt + 1}.`);
+      const scripts = fallbackCDNs[attempt];
       scripts.forEach(src => {
         const script = document.createElement('script');
         script.src = src;
         script.async = false;
+        script.onerror = () => loadFallbackFirebase(attempt + 1);
         document.head.appendChild(script);
       });
     }
@@ -85,7 +91,7 @@
             <label for="setLocation" class="block text-sm font-medium text-gray-700">Set Location</label>
             <input type="text" id="setLocation" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
           </div>
-          <button onclick="submitOrder()" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Submit Order</button>
+          <button id="submitOrderBtn" onclick="submitOrder()" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Submit Order</button>
         </div>
       </div>
     </div>
@@ -94,11 +100,17 @@
   <script>
     // Wait for DOM and Firebase SDK to load
     document.addEventListener('DOMContentLoaded', () => {
-      // Retry loading Firebase if not available
-      const initializeApp = () => {
+      // Retry loading Firebase with timeout
+      const initializeApp = (attempt = 0, maxAttempts = 10) => {
+        if (attempt >= maxAttempts) {
+          console.error('Firebase SDK failed to load after maximum attempts.');
+          alert('Failed to load Firebase SDK. Using localStorage as fallback. Check network or ad blockers.');
+          useLocalStorageFallback();
+          return;
+        }
         if (typeof firebase === 'undefined') {
-          console.error('Firebase SDK not loaded yet. Retrying in 500ms.');
-          setTimeout(initializeApp, 500);
+          console.warn(`Firebase SDK not loaded. Retrying attempt ${attempt + 1}/${maxAttempts} in 500ms.`);
+          setTimeout(() => initializeApp(attempt + 1, maxAttempts), 500);
           return;
         }
 
@@ -114,14 +126,17 @@
 
         // Initialize Firebase
         let db;
+        let useFirebase = true;
         try {
           firebase.initializeApp(firebaseConfig);
           db = firebase.firestore();
           console.log('Firebase initialized successfully at', new Date().toLocaleString());
+          document.getElementById('submitOrderBtn').disabled = false;
         } catch (error) {
           console.error('Firebase initialization failed:', error.message);
-          alert('Failed to connect to Firebase: ' + error.message);
-          document.getElementById('orderTableBody').innerHTML = '<tr><td colspan="6" class="px-4 py-2 text-center">Cannot load orders due to Firebase configuration error</td></tr>';
+          alert('Failed to connect to Firebase: ' + error.message + '. Using localStorage as fallback.');
+          useLocalStorageFallback();
+          useFirebase = false;
           return;
         }
 
@@ -143,6 +158,15 @@
           });
         }
 
+        // LocalStorage fallback
+        let localOrders = JSON.parse(localStorage.getItem('orders')) || [];
+        function useLocalStorageFallback() {
+          console.warn('Using localStorage fallback due to Firebase failure.');
+          document.getElementById('orderTableBody').innerHTML = '<tr><td colspan="6" class="px-4 py-2 text-center">Using localStorage (offline mode). Firebase unavailable.</td></tr>';
+          document.getElementById('submitOrderBtn').disabled = false;
+          renderOrders(); // Render any existing local orders
+        }
+
         // Function to submit a new order
         async function submitOrder() {
           const itemName = document.getElementById('itemName').value;
@@ -156,19 +180,30 @@
           }
 
           const order = {
+            id: Date.now().toString(),
             itemName,
             source,
             deliveryMethod,
             setLocation: setLocation || 'TBD',
             status: 'Ordered',
             receivedBy: null,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            createdAt: new Date().toISOString()
           };
 
           try {
             console.log('Attempting to add order:', order);
-            await db.collection('orders').add(order);
-            console.log('Order added successfully at', new Date().toLocaleString());
+            if (useFirebase) {
+              await db.collection('orders').add({
+                ...order,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              });
+              console.log('Order added to Firestore at', new Date().toLocaleString());
+            } else {
+              localOrders.push(order);
+              localStorage.setItem('orders', JSON.stringify(localOrders));
+              console.log('Order added to localStorage at', new Date().toLocaleString());
+              renderOrders();
+            }
             clearForm();
             showTab('orders');
           } catch (error) {
@@ -191,12 +226,23 @@
           if (receivedBy) {
             try {
               console.log(`Marking order ${id} as received by ${receivedBy}`);
-              await db.collection('orders').doc(id).update({
-                status: 'Received',
-                receivedBy,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-              });
-              console.log('Order marked as received at', new Date().toLocaleString());
+              if (useFirebase) {
+                await db.collection('orders').doc(id).update({
+                  status: 'Received',
+                  receivedBy,
+                  updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log('Order marked as received in Firestore at', new Date().toLocaleString());
+              } else {
+                const order = localOrders.find(o => o.id === id);
+                if (order) {
+                  order.status = 'Received';
+                  order.receivedBy = receivedBy;
+                  localStorage.setItem('orders', JSON.stringify(localOrders));
+                  console.log('Order marked as received in localStorage at', new Date().toLocaleString());
+                  renderOrders();
+                }
+              }
             } catch (error) {
               console.error('Error updating order:', error.message);
               alert(`Failed to mark order as received: ${error.message}`);
@@ -209,8 +255,15 @@
           if (confirm('Are you sure you want to delete this order?')) {
             try {
               console.log(`Deleting order ${id}`);
-              await db.collection('orders').doc(id).delete();
-              console.log('Order deleted successfully at', new Date().toLocaleString());
+              if (useFirebase) {
+                await db.collection('orders').doc(id).delete();
+                console.log('Order deleted from Firestore at', new Date().toLocaleString());
+              } else {
+                localOrders = localOrders.filter(o => o.id !== id);
+                localStorage.setItem('orders', JSON.stringify(localOrders));
+                console.log('Order deleted from localStorage at', new Date().toLocaleString());
+                renderOrders();
+              }
             } catch (error) {
               console.error('Error deleting order:', error.message);
               alert(`Failed to delete order: ${error.message}`);
@@ -224,42 +277,67 @@
           tbody.innerHTML = '';
 
           try {
-            db.collection('orders')
-              .orderBy('createdAt', 'desc')
-              .onSnapshot(snapshot => {
-                console.log('Snapshot received at', new Date().toLocaleString(), ':', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                tbody.innerHTML = '';
-                if (snapshot.empty) {
-                  console.log('No orders found');
-                  const row = document.createElement('tr');
-                  row.innerHTML = '<td colspan="6" class="px-4 py-2 text-center">No orders found</td>';
-                  tbody.appendChild(row);
-                  return;
-                }
-                snapshot.forEach(doc => {
-                  const order = doc.data();
-                  const row = document.createElement('tr');
-                  row.innerHTML = `
-                    <td class="px-4 py-2">${order.itemName}</td>
-                    <td class="px-4 py-2">${order.source}</td>
-                    <td class="px-4 py-2">${order.deliveryMethod}</td>
-                    <td class="px-4 py-2">${order.setLocation}</td>
-                    <td class="px-4 py-2">${order.status}${order.receivedBy ? ' by ' + order.receivedBy : ''}</td>
-                    <td class="px-4 py-2">
-                      ${order.status === 'Ordered' ? `<button onclick="markReceived('${doc.id}')" class="text-indigo-600 hover:text-indigo-800 mr-2">Mark Received</button>` : ''}
-                      <button onclick="deleteOrder('${doc.id}')" class="text-red-600 hover:text-red-800">Delete</button>
-                    </td>
-                  `;
-                  tbody.appendChild(row);
+            if (useFirebase) {
+              db.collection('orders')
+                .orderBy('createdAt', 'desc')
+                .onSnapshot(snapshot => {
+                  console.log('Snapshot received at', new Date().toLocaleString(), ':', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                  tbody.innerHTML = '';
+                  if (snapshot.empty) {
+                    console.log('No orders found in Firestore');
+                    const row = document.createElement('tr');
+                    row.innerHTML = '<td colspan="6" class="px-4 py-2 text-center">No orders found</td>';
+                    tbody.appendChild(row);
+                    return;
+                  }
+                  snapshot.forEach(doc => {
+                    const order = doc.data();
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                      <td class="px-4 py-2">${order.itemName}</td>
+                      <td class="px-4 py-2">${order.source}</td>
+                      <td class="px-4 py-2">${order.deliveryMethod}</td>
+                      <td class="px-4 py-2">${order.setLocation}</td>
+                      <td class="px-4 py-2">${order.status}${order.receivedBy ? ' by ' + order.receivedBy : ''}</td>
+                      <td class="px-4 py-2">
+                        ${order.status === 'Ordered' ? `<button onclick="markReceived('${doc.id}')" class="text-indigo-600 hover:text-indigo-800 mr-2">Mark Received</button>` : ''}
+                        <button onclick="deleteOrder('${doc.id}')" class="text-red-600 hover:text-red-800">Delete</button>
+                      </td>
+                    `;
+                    tbody.appendChild(row);
+                  });
+                }, error => {
+                  console.error('Error fetching orders from Firestore:', error.message);
+                  alert(`Failed to load orders: ${error.message}`);
+                  tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-2 text-center">Error loading orders</td></tr>';
                 });
-              }, error => {
-                console.error('Error fetching orders:', error.message);
-                alert(`Failed to load orders: ${error.message}`);
-                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-2 text-center">Error loading orders</td></tr>';
+            } else {
+              console.log('Rendering orders from localStorage:', localOrders);
+              if (localOrders.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="6" class="px-4 py-2 text-center">No orders found (localStorage)</td>';
+                tbody.appendChild(row);
+                return;
+              }
+              localOrders.forEach(order => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                  <td class="px-4 py-2">${order.itemName}</td>
+                  <td class="px-4 py-2">${order.source}</td>
+                  <td class="px-4 py-2">${order.deliveryMethod}</td>
+                  <td class="px-4 py-2">${order.setLocation}</td>
+                  <td class="px-4 py-2">${order.status}${order.receivedBy ? ' by ' + order.receivedBy : ''}</td>
+                  <td class="px-4 py-2">
+                    ${order.status === 'Ordered' ? `<button onclick="markReceived('${order.id}')" class="text-indigo-600 hover:text-indigo-800 mr-2">Mark Received</button>` : ''}
+                    <button onclick="deleteOrder('${order.id}')" class="text-red-600 hover:text-red-800">Delete</button>
+                  </td>
+                `;
+                tbody.appendChild(row);
               });
+            }
           } catch (error) {
-            console.error('Error setting up snapshot listener:', error.message);
-            alert(`Failed to initialize order listener: ${error.message}`);
+            console.error('Error setting up order rendering:', error.message);
+            alert(`Failed to initialize order rendering: ${error.message}`);
           }
         }
 
@@ -274,7 +352,7 @@
         }
       };
 
-      // Start initialization with retry
+      // Start initialization
       initializeApp();
     });
   </script>

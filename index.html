@@ -12,11 +12,11 @@
   <!-- Load Firebase modular SDK -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 
     // Expose Firebase functions to global scope for React app
-    window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, getStorage, ref, uploadBytes, getDownloadURL };
+    window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, getStorage, ref, uploadBytes, getDownloadURL };
   </script>
   <!-- Load Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -26,14 +26,14 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // Firebase configuration (replace with your actual Firebase config from Firebase Console)
+    // Firebase configuration for set-hardware project
     const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID"
+      apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
+      authDomain: "set-hardware.firebaseapp.com",
+      projectId: "set-hardware",
+      storageBucket: "set-hardware.firebasestorage.app",
+      messagingSenderId: "613195230835",
+      appId: "1:613195230835:web:5dfaaf04dafa06d06ec406"
     };
 
     // Initialize Firebase
@@ -47,6 +47,7 @@
     }
 
     function App() {
+      const [activeTab, setActiveTab] = useState('home');
       const [formData, setFormData] = useState({
         itemName: '',
         pickupFrom: '',
@@ -56,27 +57,77 @@
         endDate: '',
         set: '',
         recipient: '',
-        received: false
+        received: false,
+        pickedUpBy: ''
       });
       const [image, setImage] = useState(null);
       const [orders, setOrders] = useState([]);
+      const [archivedOrders, setArchivedOrders] = useState([]);
+      const [sets, setSets] = useState([]);
+      const [recipients, setRecipients] = useState([]);
+      const [newSet, setNewSet] = useState('');
+      const [newRecipient, setNewRecipient] = useState('');
       const [uploading, setUploading] = useState(false);
       const [error, setError] = useState(null);
 
-      // Fetch orders from Firestore
+      // Fetch orders, archived orders, sets, and recipients from Firestore
       useEffect(() => {
         if (!db) return;
-        const unsubscribe = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
+
+        // Fetch orders
+        const unsubscribeOrders = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
           const ordersData = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           }));
           setOrders(ordersData);
         }, (err) => {
-          console.error('Firestore fetch error:', err);
+          console.error('Firestore fetch error (orders):', err);
           setError('Failed to fetch orders. Please try again.');
         });
-        return () => unsubscribe();
+
+        // Fetch archived orders
+        const unsubscribeArchived = firebase.onSnapshot(firebase.collection(db, 'archive'), (snapshot) => {
+          const archivedData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setArchivedOrders(archivedData);
+        }, (err) => {
+          console.error('Firestore fetch error (archive):', err);
+          setError('Failed to fetch archived orders. Please try again.');
+        });
+
+        // Fetch sets
+        const unsubscribeSets = firebase.onSnapshot(firebase.collection(db, 'sets'), (snapshot) => {
+          const setsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            name: doc.data().name
+          }));
+          setSets(setsData);
+        }, (err) => {
+          console.error('Firestore fetch error (sets):', err);
+          setError('Failed to fetch sets. Please try again.');
+        });
+
+        // Fetch recipients
+        const unsubscribeRecipients = firebase.onSnapshot(firebase.collection(db, 'recipients'), (snapshot) => {
+          const recipientsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            name: doc.data().name
+          }));
+          setRecipients(recipientsData);
+        }, (err) => {
+          console.error('Firestore fetch error (recipients):', err);
+          setError('Failed to fetch recipients. Please try again.');
+        });
+
+        return () => {
+          unsubscribeOrders();
+          unsubscribeArchived();
+          unsubscribeSets();
+          unsubscribeRecipients();
+        };
       }, []);
 
       const handleInputChange = (e) => {
@@ -123,7 +174,8 @@
             endDate: '',
             set: '',
             recipient: '',
-            received: false
+            received: false,
+            pickedUpBy: ''
           });
           setImage(null);
           alert('Order submitted successfully!');
@@ -135,14 +187,15 @@
         }
       };
 
-      const toggleReceived = async (id, currentStatus) => {
+      const toggleReceived = async (id, currentStatus, pickedUpBy) => {
         if (!db) {
           setError('Firebase not initialized.');
           return;
         }
         try {
           await firebase.updateDoc(firebase.doc(db, 'orders', id), {
-            received: !currentStatus
+            received: !currentStatus,
+            pickedUpBy: !currentStatus ? pickedUpBy : ''
           });
         } catch (error) {
           console.error('Error updating received status:', error);
@@ -150,10 +203,150 @@
         }
       };
 
+      const addSet = async (e) => {
+        e.preventDefault();
+        if (!db || !newSet.trim()) return;
+        try {
+          await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
+          setNewSet('');
+        } catch (error) {
+          console.error('Error adding set:', error);
+          setError('Error adding set. Please try again.');
+        }
+      };
+
+      const deleteSet = async (id, setName) => {
+        if (!db) return;
+        if (!window.confirm(`Are you sure you want to delete the set "${setName}"? All associated orders will be archived.`)) return;
+        try {
+          // Fetch all orders for the set
+          const ordersQuery = firebase.query(firebase.collection(db, 'orders'), firebase.where('set', '==', setName));
+          const ordersSnapshot = await firebase.getDocs(ordersQuery);
+
+          // Move orders to archive
+          const batch = firebase.writeBatch(db);
+          ordersSnapshot.forEach(doc => {
+            const orderData = doc.data();
+            batch.set(firebase.doc(db, 'archive', doc.id), { ...orderData, archivedAt: new Date() });
+            batch.delete(firebase.doc(db, 'orders', doc.id));
+          });
+
+          // Delete the set
+          batch.delete(firebase.doc(db, 'sets', id));
+
+          // Commit the batch
+          await batch.commit();
+        } catch (error) {
+          console.error('Error deleting set:', error);
+          setError('Error deleting set or archiving orders. Please try again.');
+        }
+      };
+
+      const restoreSet = async (setName) => {
+        if (!db) return;
+        try {
+          // Add the set back to sets collection
+          const batch = firebase.writeBatch(db);
+          batch.set(firebase.doc(firebase.collection(db, 'sets')), { name: setName });
+
+          // Move archived orders back to orders collection
+          const archivedQuery = firebase.query(firebase.collection(db, 'archive'), firebase.where('set', '==', setName));
+          const archivedSnapshot = await firebase.getDocs(archivedQuery);
+
+          archivedSnapshot.forEach(doc => {
+            const orderData = doc.data();
+            batch.set(firebase.doc(db, 'orders', doc.id), { ...orderData });
+            batch.delete(firebase.doc(db, 'archive', doc.id));
+          });
+
+          // Commit the batch
+          await batch.commit();
+        } catch (error) {
+          console.error('Error restoring set:', error);
+          setError('Error restoring set. Please try again.');
+        }
+      };
+
+      const addRecipient = async (e) => {
+        e.preventDefault();
+        if (!db || !newRecipient.trim()) return;
+        try {
+          await firebase.addDoc(firebase.collection(db, 'recipients'), { name: newRecipient.trim() });
+          setNewRecipient('');
+        } catch (error) {
+          console.error('Error adding recipient:', error);
+          setError('Error adding recipient. Please try again.');
+        }
+      };
+
+      const deleteRecipient = async (id) => {
+        if (!db) return;
+        try {
+          await firebase.deleteDoc(firebase.doc(db, 'recipients', id));
+        } catch (error) {
+          console.error('Error deleting recipient:', error);
+          setError('Error deleting recipient. Please try again.');
+        }
+      };
+
+      // Group archived orders by set
+      const groupedArchivedOrders = archivedOrders.reduce((acc, order) => {
+        const setName = order.set || 'Unknown Set';
+        if (!acc[setName]) acc[setName] = [];
+        acc[setName].push(order);
+        return acc;
+      }, {});
+
+      // Group completed orders by set
+      const completedOrders = orders.filter(order => order.received);
+      const groupedCompletedOrders = completedOrders.reduce((acc, order) => {
+        const setName = order.set || 'Unknown Set';
+        if (!acc[setName]) acc[setName] = [];
+        acc[setName].push(order);
+        return acc;
+      }, {});
+
+      // Active orders (not received)
+      const activeOrders = orders.filter(order => !order.received);
+
       return (
         <div className="container mx-auto p-4">
           <h1 className="text-3xl font-bold mb-6 text-center">Hardware Order Management</h1>
-          
+
+          {/* Tabs */}
+          <div className="flex border-b mb-6">
+            <button
+              className={`px-4 py-2 font-semibold ${activeTab === 'home' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+              onClick={() => setActiveTab('home')}
+            >
+              Home
+            </button>
+            <button
+              className={`px-4 py-2 font-semibold ${activeTab === 'completed' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+              onClick={() => setActiveTab('completed')}
+            >
+              Completed Orders
+            </button>
+            <button
+              className={`px-4 py-2 font-semibold ${activeTab === 'options' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+              onClick={() => setActiveTab('options')}
+            >
+              Options
+            </button>
+            <button
+              className={`px-4 py-2 font-semibold ${activeTab === 'orders' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+              onClick={() => setActiveTab('orders')}
+            >
+              Orders
+            </button>
+            <button
+              className={`px-4 py-2 font-semibold ${activeTab === 'archive' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
+              onClick={() => setActiveTab('archive')}
+            >
+              Archive
+            </button>
+          </div>
+
           {/* Error Display */}
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -161,126 +354,345 @@
             </div>
           )}
 
-          {/* Order Form */}
-          <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-2xl font-semibold mb-4">New Order</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text"
-                name="itemName"
-                value={formData.itemName}
-                onChange={handleInputChange}
-                placeholder="Item Name"
-                className="w-full p-2 border rounded"
-                required
-              />
-              <input
-                type="text"
-                name="pickupFrom"
-                value={formData.pickupFrom}
-                onChange={handleInputChange}
-                placeholder="Pickup From"
-                className="w-full p-2 border rounded"
-                required
-              />
-              <input
-                type="text"
-                name="orderNumber"
-                value={formData.orderNumber}
-                onChange={handleInputChange}
-                placeholder="Order Number"
-                className="w-full p-2 border rounded"
-                required
-              />
-              <select
-                name="deliveryMethod"
-                value={formData.deliveryMethod}
-                onChange={handleInputChange}
-                className="w-full p-2 border rounded"
-              >
-                <option value="shipped">Shipped</option>
-                <option value="pickup">Pickup</option>
-              </select>
-              <div className="flex space-x-2">
-                <input
-                  type="date"
-                  name="startDate"
-                  value={formData.startDate}
-                  onChange={handleInputChange}
-                  placeholder="Shipping Start Date"
-                  className="w-full p-2 border rounded"
-                  required
-                />
-                <input
-                  type="date"
-                  name="endDate"
-                  value={formData.endDate}
-                  onChange={handleInputChange}
-                  placeholder="Shipping End Date"
-                  className="w-full p-2 border rounded"
-                  required
-                />
-              </div>
-              <input
-                type="file"
-                onChange={handleImageChange}
-                accept="image/*"
-                className="w-full p-2 border rounded"
-              />
-              <input
-                type="text"
-                name="set"
-                value={formData.set}
-                onChange={handleInputChange}
-                placeholder="Designated Set"
-                className="w-full p-2 border rounded"
-                required
-              />
-              <input
-                type="text"
-                name="recipient"
-                value={formData.recipient}
-                onChange={handleInputChange}
-                placeholder="Recipient"
-                className="w-full p-2 border rounded"
-                required
-              />
-              <button
-                type="submit"
-                disabled={uploading}
-                className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
-              >
-                {uploading ? 'Submitting...' : 'Submit Order'}
-              </button>
-            </form>
-          </div>
+          {/* Home Tab (Active Orders Only) */}
+          {activeTab === 'home' && (
+            <div>
+              <h2 className="text-2xl font-semibold mb-4">Active Orders</h2>
+              {activeOrders.length === 0 ? (
+                <p className="text-gray-600">No active orders found.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeOrders.map(order => (
+                    <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
+                      <h3 className="text-lg font-semibold">{order.itemName}</h3>
+                      <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
+                      <p><strong>Order Number:</strong> {order.orderNumber}</p>
+                      <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
+                      <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                      <p><strong>Set:</strong> {order.set}</p>
+                      <p><strong>Recipient:</strong> {order.recipient}</p>
+                      <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
+                      {order.imageUrl && (
+                        <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
+                      )}
+                      <div className="mt-2">
+                        <div className="flex space-x-2">
+                          <select
+                            onChange={(e) => toggleReceived(order.id, order.received, e.target.value)}
+                            className="w-full p-2 border rounded"
+                            defaultValue=""
+                          >
+                            <option value="" disabled>Select Pickup Person</option>
+                            {recipients.map(recipient => (
+                              <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Orders List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {orders.map(order => (
-              <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold">{order.itemName}</h3>
-                <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
-                <p><strong>Order Number:</strong> {order.orderNumber}</p>
-                <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
-                <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
-                <p><strong>Set:</strong> {order.set}</p>
-                <p><strong>Recipient:</strong> {order.recipient}</p>
-                <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
-                {order.imageUrl && (
-                  <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
-                )}
-                <button
-                  onClick={() => toggleReceived(order.id, order.received)}
-                  className={`mt-2 p-2 rounded w-full ${
-                    order.received ? 'bg-gray-500' : 'bg-green-500'
-                  } text-white hover:opacity-90`}
-                >
-                  {order.received ? 'Mark as Not Received' : 'Mark as Received'}
-                </button>
+          {/* Orders Tab (All Orders + New Order Form) */}
+          {activeTab === 'orders' && (
+            <div>
+              <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md mb-8">
+                <h2 className="text-2xl font-semibold mb-4">New Order</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <input
+                    type="text"
+                    name="itemName"
+                    value={formData.itemName}
+                    onChange={handleInputChange}
+                    placeholder="Item Name"
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="pickupFrom"
+                    value={formData.pickupFrom}
+                    onChange={handleInputChange}
+                    placeholder="Pickup From"
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="orderNumber"
+                    value={formData.orderNumber}
+                    onChange={handleInputChange}
+                    placeholder="Order Number"
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                  <select
+                    name="deliveryMethod"
+                    value={formData.deliveryMethod}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border rounded"
+                  >
+                    <option value="shipped">Shipped</option>
+                    <option value="pickup">Pickup</option>
+                  </select>
+                  <div className="flex space-x-2">
+                    <input
+                      type="date"
+                      name="startDate"
+                      value={formData.startDate}
+                      onChange={handleInputChange}
+                      placeholder="Shipping Start Date"
+                      className="w-full p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="date"
+                      name="endDate"
+                      value={formData.endDate}
+                      onChange={handleInputChange}
+                      placeholder="Shipping End Date"
+                      className="w-full p-2 border rounded"
+                      required
+                    />
+                  </div>
+                  <input
+                    type="file"
+                    onChange={handleImageChange}
+                    accept="image/*"
+                    className="w-full p-2 border rounded"
+                  />
+                  <select
+                    name="set"
+                    value={formData.set}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="">Select Set</option>
+                    {sets.map(set => (
+                      <option key={set.id} value={set.name}>{set.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    name="recipient"
+                    value={formData.recipient}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="">Select Recipient</option>
+                    {recipients.map(recipient => (
+                      <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={uploading}
+                    className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
+                  >
+                    {uploading ? 'Submitting...' : 'Submit Order'}
+                  </button>
+                </form>
               </div>
-            ))}
-          </div>
+              <h2 className="text-2xl font-semibold mb-4">All Orders</h2>
+              {orders.length === 0 ? (
+                <p className="text-gray-600">No orders found.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {orders.map(order => (
+                    <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
+                      <h3 className="text-lg font-semibold">{order.itemName}</h3>
+                      <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
+                      <p><strong>Order Number:</strong> {order.orderNumber}</p>
+                      <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
+                      <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                      <p><strong>Set:</strong> {order.set}</p>
+                      <p><strong>Recipient:</strong> {order.recipient}</p>
+                      <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
+                      {order.received && order.pickedUpBy && (
+                        <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
+                      )}
+                      {order.imageUrl && (
+                        <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
+                      )}
+                      {order.received && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => toggleReceived(order.id, order.received, '')}
+                            className="w-full bg-gray-500 text-white p-2 rounded hover:opacity-90"
+                          >
+                            Undo Received
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Completed Orders Tab */}
+          {activeTab === 'completed' && (
+            <div className="max-w-4xl mx-auto">
+              <h2 className="text-2xl font-semibold mb-4">Completed Orders</h2>
+              {Object.keys(groupedCompletedOrders).length === 0 ? (
+                <p className="text-gray-600">No completed orders found.</p>
+              ) : (
+                Object.keys(groupedCompletedOrders).sort().map(setName => (
+                  <div key={setName} className="mb-8">
+                    <h3 className="text-xl font-semibold mb-4">{setName}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {groupedCompletedOrders[setName]
+                        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                        .map(order => (
+                          <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
+                            <h4 className="text-lg font-semibold">{order.itemName}</h4>
+                            <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
+                            <p><strong>Order Number:</strong> {order.orderNumber}</p>
+                            <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
+                            <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                            <p><strong>Recipient:</strong> {order.recipient}</p>
+                            <p><strong>Received:</strong> Yes</p>
+                            {order.pickedUpBy && (
+                              <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
+                            )}
+                            {order.imageUrl && (
+                              <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
+                            )}
+                            <button
+                              onClick={() => toggleReceived(order.id, order.received, '')}
+                              className="w-full bg-gray-500 text-white p-2 rounded hover:opacity-90 mt-2"
+                            >
+                              Undo Received
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Options Tab */}
+          {activeTab === 'options' && (
+            <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md">
+              <h2 className="text-2xl font-semibold mb-4">Options</h2>
+              <div className="space-y-6">
+                {/* Manage Sets */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Manage Sets</h3>
+                  <form onSubmit={addSet} className="flex space-x-2 mb-4">
+                    <input
+                      type="text"
+                      value={newSet}
+                      onChange={(e) => setNewSet(e.target.value)}
+                      placeholder="Add New Set"
+                      className="w-full p-2 border rounded"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                    >
+                      Add
+                    </button>
+                  </form>
+                  <ul className="space-y-2">
+                    {sets.map(set => (
+                      <li key={set.id} className="flex justify-between items-center">
+                        <span>{set.name}</span>
+                        <button
+                          onClick={() => deleteSet(set.id, set.name)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {/* Manage Recipients */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Manage Recipients</h3>
+                  <form onSubmit={addRecipient} className="flex space-x-2 mb-4">
+                    <input
+                      type="text"
+                      value={newRecipient}
+                      onChange={(e) => setNewRecipient(e.target.value)}
+                      placeholder="Add New Recipient"
+                      className="w-full p-2 border rounded"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                    >
+                      Add
+                    </button>
+                  </form>
+                  <ul className="space-y-2">
+                    {recipients.map(recipient => (
+                      <li key={recipient.id} className="flex justify-between items-center">
+                        <span>{recipient.name}</span>
+                        <button
+                          onClick={() => deleteRecipient(recipient.id)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Archive Tab */}
+          {activeTab === 'archive' && (
+            <div className="max-w-4xl mx-auto">
+              <h2 className="text-2xl font-semibold mb-4">Archived Orders</h2>
+              {Object.keys(groupedArchivedOrders).length === 0 ? (
+                <p className="text-gray-600">No archived orders found.</p>
+              ) : (
+                Object.keys(groupedArchivedOrders).sort().map(setName => (
+                  <div key={setName} className="mb-8">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-semibold">{setName}</h3>
+                      <button
+                        onClick={() => restoreSet(setName)}
+                        className="bg-green-500 text-white p-2 rounded hover:bg-green-600"
+                      >
+                        Restore Set
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {groupedArchivedOrders[setName].map(order => (
+                        <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
+                          <h4 className="text-lg font-semibold">{order.itemName}</h4>
+                          <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
+                          <p><strong>Order Number:</strong> {order.orderNumber}</p>
+                          <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
+                          <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                          <p><strong>Recipient:</strong> {order.recipient}</p>
+                          <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
+                          {order.received && order.pickedUpBy && (
+                            <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
+                          )}
+                          {order.imageUrl && (
+                            <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       );
     }
@@ -290,7 +702,7 @@
       ReactDOM.render(<App />, document.getElementById('root'));
     } catch (error) {
       console.error('React render error:', error);
-      document.getElementById('root').innerHTML = '<div class="text-red-500 text-center">Error loading application. Please check console for details.</div>';
+      document.getElementById('root').innerHTML = '<div className="text-red-500 text-center">Error loading application. Please check console for details.</div>';
     }
   </script>
 </body>

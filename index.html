@@ -5,83 +5,282 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SetHardware Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+        .apple-button {
+            background: linear-gradient(to bottom, #3b82f6, #2563eb);
+            border: none;
+            border-radius: 12px;
+            padding: 10px 20px;
+            color: white;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .apple-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .apple-input, .apple-select {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px;
+            background: #f9fafb;
+        }
+        .apple-table {
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .apple-modal {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+        .tab-active {
+            background: linear-gradient(to bottom, #3b82f6, #2563eb);
+            color: white;
+        }
+        tr:hover {
+            cursor: pointer;
+            background-color: #f1f5f9;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 font-sans">
-    <div class="container mx-auto p-4">
-        <h1 class="text-2xl font-bold mb-4 text-center">SetHardware Manager</h1>
+<body class="bg-gray-50">
+    <div class="container mx-auto p-6 max-w-7xl">
+        <h1 class="text-3xl font-semibold mb-6 text-center text-gray-800">SetHardware Manager</h1>
 
-        <!-- Add Item Form -->
-        <div id="admin-section" class="mb-6 bg-white p-4 rounded-lg shadow-md">
-            <h2 class="text-lg font-semibold mb-2">Add New Item</h2>
-            <div class="grid gap-4">
-                <input id="item-name" type="text" placeholder="Item Name" class="p-2 border rounded">
-                <input id="quantity" type="number" placeholder="Quantity" class="p-2 border rounded">
-                <input id="supplier" type="text" placeholder="Supplier" class="p-2 border rounded">
-                <input id="purchase-date" type="date" class="p-2 border rounded">
-                <input id="cost" type="number" placeholder="Cost" class="p-2 border rounded">
-                <input id="order-number" type="text" placeholder="Order Number" class="p-2 border rounded">
-                <select id="set-destination" class="p-2 border rounded">
-                    <option value="">Select Set</option>
-                    <option value="Set A - Studio Lot">Set A - Studio Lot</option>
-                    <option value="Set B - Warehouse 1">Set B - Warehouse 1</option>
-                </select>
-                <select id="status" class="p-2 border rounded">
+        <!-- Tabs -->
+        <div class="flex gap-3 mb-6">
+            <button id="main-tab" class="apple-button flex-1 py-3 tab-active">Main</button>
+            <button id="input-order-tab" class="apple-button flex-1 py-3">Input Order</button>
+            <button id="received-tab" class="apple-button flex-1 py-3">Received</button>
+            <button id="archive-tab" class="apple-button flex-1 py-3">Archive</button>
+            <button id="options-tab" class="apple-button flex-1 py-3">Options</button>
+            <button id="deleted-tab" class="apple-button flex-1 py-3">Deleted</button>
+        </div>
+
+        <!-- Main Page (Orders Table) -->
+        <div id="main-page">
+            <!-- Search and Filter -->
+            <div class="mb-6 flex gap-4">
+                <input id="search" type="text" placeholder="Search items..." class="apple-input flex-grow">
+                <select id="filter-status" class="apple-select">
+                    <option value="">All Statuses</option>
                     <option value="Ordered">Ordered</option>
                     <option value="In Transit">In Transit</option>
                     <option value="Delivered">Delivered</option>
                 </select>
-                <input id="item-image" type="file" accept="image/*" class="p-2">
-                <button id="add-item" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition">Add Item</button>
             </div>
-            <div class="mt-4">
-                <label class="block">Upload CSV</label>
-                <input id="csv-upload" type="file" accept=".csv" class="p-2">
+
+            <!-- Item Table -->
+            <div class="overflow-x-auto apple-table">
+                <table id="item-table" class="w-full bg-white">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="p-3 text-left">Image</th>
+                            <th class="p-3 text-left">Item Name</th>
+                            <th class="p-3 text-left">Quantity</th>
+                            <th class="p-3 text-left">Supplier</th>
+                            <th class="p-3 text-left">Purchase Date</th>
+                            <th class="p-3 text-left">Expected Arrival</th>
+                            <th class="p-3 text-left">Cost</th>
+                            <th class="p-3 text-left">Order Number</th>
+                            <th class="p-3 text-left">Set Destination</th>
+                            <th class="p-3 text-left">Status</th>
+                            <th class="p-3 text-left">Goes To</th>
+                            <th class="p-3 text-left">Received By</th>
+                            <th class="p-3 text-left">Pickup Location</th>
+                            <th class="p-3 text-left">Received</th>
+                            <th class="p-3 text-left">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="item-table-body"></tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Search and Filter -->
-        <div class="mb-4 flex gap-4">
-            <input id="search" type="text" placeholder="Search items..." class="p-2 border rounded flex-grow">
-            <select id="filter-status" class="p-2 border rounded">
-                <option value="">All Statuses</option>
-                <option value="Ordered">Ordered</option>
-                <option value="In Transit">In Transit</option>
-                <option value="Delivered">Delivered</option>
-            </select>
+        <!-- Input Order Page -->
+        <div id="input-order-page" class="hidden">
+            <div class="mb-8 bg-white p-6 rounded-2xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Add New Item</h2>
+                <div class="grid gap-4 grid-cols-1 md:grid-cols-2">
+                    <input id="item-name" type="text" placeholder="Item Name" class="apple-input">
+                    <input id="quantity" type="number" placeholder="Quantity" class="apple-input">
+                    <input id="supplier" type="text" placeholder="Supplier" class="apple-input">
+                    <input id="purchase-date" type="date" placeholder="Purchase Date" class="apple-input">
+                    <div id="arrival-single" class="hidden">
+                        <input id="expected-arrival" type="time" step="3600" placeholder="Expected Arrival (e.g., 14:00)" class="apple-input">
+                    </div>
+                    <div id="arrival-range" class="hidden grid gap-2 grid-cols-2">
+                        <input id="expected-arrival-start-date" type="date" placeholder="Start Date" class="apple-input">
+                        <input id="expected-arrival-start-time" type="time" step="3600" placeholder="Start Time" class="apple-input">
+                        <input id="expected-arrival-end-date" type="date" placeholder="End Date" class="apple-input">
+                        <input id="expected-arrival-end-time" type="time" step="3600" placeholder="End Time" class="apple-input">
+                    </div>
+                    <input id="cost" type="number" placeholder="Cost" class="apple-input">
+                    <input id="order-number" type="text" placeholder="Order Number" class="apple-input">
+                    <select id="set-destination" class="apple-select">
+                        <option value="">Select Set</option>
+                    </select>
+                    <select id="status" class="apple-select">
+                        <option value="Ordered">Ordered</option>
+                        <option value="In Transit">In Transit</option>
+                        <option value="Delivered">Delivered</option>
+                    </select>
+                    <select id="goes-to" class="apple-select">
+                        <option value="">Select Goes To</option>
+                    </select>
+                    <div class="flex gap-4">
+                        <label class="flex items-center"><input type="radio" name="delivery-type" value="delivery" checked class="mr-2">Delivery</label>
+                        <label class="flex items-center"><input type="radio" name="delivery-type" value="pickup" class="mr-2">Pickup</label>
+                    </div>
+                    <input id="pickup-location" type="text" placeholder="Pickup Location (e.g., Home Depot)" class="apple-input hidden">
+                    <input id="item-image" type="file" accept="image/*" class="apple-input">
+                    <button id="add-item" class="apple-button col-span-2">Add Item</button>
+                </div>
+            </div>
         </div>
 
-        <!-- Item Table -->
-        <div class="overflow-x-auto">
-            <table id="item-table" class="w-full bg-white rounded-lg shadow-md">
-                <thead>
-                    <tr class="bg-gray-200">
-                        <th class="p-2">Image</th>
-                        <th class="p-2">Item Name</th>
-                        <th class="p-2">Quantity</th>
-                        <th class="p-2">Supplier</th>
-                        <th class="p-2">Purchase Date</th>
-                        <th class="p-2">Cost</th>
-                        <th class="p-2">Order Number</th>
-                        <th class="p-2">Set Destination</th>
-                        <th class="p-2">Status</th>
-                    </tr>
-                </thead>
-                <tbody id="item-table-body"></tbody>
-            </table>
+        <!-- Received Page -->
+        <div id="received-page" class="hidden">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Received Items</h2>
+            <div id="received-items" class="space-y-4"></div>
+        </div>
+
+        <!-- Archive Page -->
+        <div id="archive-page" class="hidden">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Archived Items</h2>
+            <div id="archived-items" class="space-y-4"></div>
+        </div>
+
+        <!-- Options Menu -->
+        <div id="options-page" class="hidden">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Manage Sets</h2>
+            <div class="mb-4 flex gap-2">
+                <input id="new-set-name" type="text" placeholder="New Set Name" class="apple-input flex-grow">
+                <button id="add-set" class="apple-button">Add Set</button>
+            </div>
+            <div id="set-list" class="space-y-3"></div>
+            <h2 class="text-xl font-semibold mb-4 mt-6 text-gray-800">Manage Team Members</h2>
+            <div class="mb-4 flex gap-2">
+                <input id="new-team-member" type="text" placeholder="New Team Member" class="apple-input flex-grow">
+                <button id="add-team-member" class="apple-button">Add Team Member</button>
+            </div>
+            <div id="team-member-list" class="space-y-3"></div>
+        </div>
+
+        <!-- Deleted Page -->
+        <div id="deleted-page" class="hidden">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Deleted Items</h2>
+            <div id="deleted-items" class="space-y-4"></div>
+        </div>
+
+        <!-- Edit Item Modal -->
+        <div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-30 hidden flex items-center justify-center">
+            <div class="apple-modal p-6 w-full max-w-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Edit Item</h2>
+                <div class="grid gap-4 grid-cols-1">
+                    <input id="edit-item-id" type="hidden">
+                    <input id="edit-item-name" type="text" placeholder="Item Name" class="apple-input">
+                    <input id="edit-quantity" type="number" placeholder="Quantity" class="apple-input">
+                    <input id="edit-supplier" type="text" placeholder="Supplier" class="apple-input">
+                    <input id="edit-purchase-date" type="date" placeholder="Purchase Date" class="apple-input">
+                    <div id="edit-arrival-single" class="hidden">
+                        <input id="edit-expected-arrival" type="time" step="3600" placeholder="Expected Arrival (e.g., 14:00)" class="apple-input">
+                    </div>
+                    <div id="edit-arrival-range" class="hidden grid gap-2 grid-cols-2">
+                        <input id="edit-expected-arrival-start-date" type="date" placeholder="Start Date" class="apple-input">
+                        <input id="edit-expected-arrival-start-time" type="time" step="3600" placeholder="Start Time" class="apple-input">
+                        <input id="edit-expected-arrival-end-date" type="date" placeholder="End Date" class="apple-input">
+                        <input id="edit-expected-arrival-end-time" type="time" step="3600" placeholder="End Time" class="apple-input">
+                    </div>
+                    <input id="edit-cost" type="number" placeholder="Cost" class="apple-input">
+                    <input id="edit-order-number" type="text" placeholder="Order Number" class="apple-input">
+                    <select id="edit-set-destination" class="apple-select">
+                        <option value="">Select Set</option>
+                    </select>
+                    <select id="edit-status" class="apple-select">
+                        <option value="Ordered">Ordered</option>
+                        <option value="In Transit">In Transit</option>
+                        <option value="Delivered">Delivered</option>
+                    </select>
+                    <select id="edit-goes-to" class="apple-select">
+                        <option value="">Select Goes To</option>
+                    </select>
+                    <div class="flex gap-4">
+                        <label class="flex items-center"><input type="radio" name="edit-delivery-type" value="delivery" class="mr-2">Delivery</label>
+                        <label class="flex items-center"><input type="radio" name="edit-delivery-type" value="pickup" class="mr-2">Pickup</label>
+                    </div>
+                    <input id="edit-pickup-location" type="text" placeholder="Pickup Location (e.g., Home Depot)" class="apple-input hidden">
+                    <input id="edit-item-image" type="file" accept="image/*" class="apple-input">
+                    <div class="flex gap-4">
+                        <button id="save-edit" class="apple-button flex-1">Save</button>
+                        <button id="delete-item" class="apple-button flex-1 bg-red-500 hover:bg-red-600">Delete</button>
+                        <button id="cancel-edit" class="apple-button flex-1 bg-gray-500 hover:bg-gray-600">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Item Details Modal -->
+        <div id="details-modal" class="fixed inset-0 bg-black bg-opacity-30 hidden flex items-center justify-center">
+            <div class="apple-modal p-8 w-full max-w-2xl">
+                <h2 class="text-2xl font-semibold mb-6 text-gray-800">Item Details</h2>
+                <div class="grid gap-4 grid-cols-1 md:grid-cols-2">
+                    <div><strong>Name:</strong> <span id="detail-name"></span></div>
+                    <div><strong>Quantity:</strong> <span id="detail-quantity"></span></div>
+                    <div><strong>Supplier:</strong> <span id="detail-supplier"></span></div>
+                    <div><strong>Purchase Date:</strong> <span id="detail-purchase-date"></span></div>
+                    <div><strong>Expected Arrival:</strong> <span id="detail-expected-arrival"></span></div>
+                    <div><strong>Cost:</strong> <span id="detail-cost"></span></div>
+                    <div><strong>Order Number:</strong> <span id="detail-order-number"></span></div>
+                    <div><strong>Set Destination:</strong> <span id="detail-set-destination"></span></div>
+                    <div><strong>Status:</strong> <span id="detail-status"></span></div>
+                    <div><strong>Goes To:</strong> <span id="detail-goes-to"></span></div>
+                    <div><strong>Received By:</strong> <span id="detail-received-by"></span></div>
+                    <div><strong>Delivery Type:</strong> <span id="detail-delivery-type"></span></div>
+                    <div><strong>Pickup Location:</strong> <span id="detail-pickup-location"></span></div>
+                    <div class="col-span-2"><strong>Image:</strong> <img id="detail-image" class="mt-2 max-w-full h-auto rounded-lg" style="max-height: 200px;" onerror="this.style.display='none'"></div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button id="close-details" class="apple-button bg-gray-500 hover:bg-gray-600">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Received Modal -->
+        <div id="received-modal" class="fixed inset-0 bg-black bg-opacity-30 hidden flex items-center justify-center">
+            <div class="apple-modal p-6 w-full max-w-md">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Mark Item as Received</h2>
+                <div class="grid gap-4">
+                    <input id="received-item-id" type="hidden">
+                    <select id="received-by" class="apple-select">
+                        <option value="">Select Received By</option>
+                    </select>
+                    <div class="flex gap-4">
+                        <button id="save-received" class="apple-button flex-1">Confirm</button>
+                        <button id="cancel-received" class="apple-button flex-1 bg-gray-500 hover:bg-gray-600">Cancel</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Export Buttons -->
-        <div class="mt-4 flex gap-4">
-            <button id="export-csv" class="bg-green-500 text-white p-2 rounded hover:bg-green-600 transition">Export as CSV</button>
-            <button id="export-pdf" class="bg-purple-500 text-white p-2 rounded hover:bg-purple-600 transition">Export as PDF</button>
+        <div class="mt-6 flex gap-4">
+            <button id="export-csv" class="apple-button">Export as CSV</button>
+            <button id="export-pdf" class="apple-button">Export as PDF</button>
         </div>
     </div>
 
     <script>
-        // Firebase Configuration using environment variables
+        // Firebase Configuration
         const firebaseConfig = {
             apiKey: process.env.FIREBASE_API_KEY,
             authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -95,108 +294,874 @@
         db.enablePersistence().catch(err => console.error("Offline persistence error:", err));
         const storage = firebase.storage();
 
-        // Load items from Firestore and LocalStorage
-        async function loadItems() {
+        // Initialize default sets and team members
+        let defaultSets = [
+            { id: '1', name: 'Set A - Studio Lot' },
+            { id: '2', name: 'Set B - Warehouse 1' }
+        ];
+        let defaultTeamMembers = [
+            { id: '1', name: 'John Doe' },
+            { id: '2', name: 'Jane Smith' }
+        ];
+        if (!localStorage.getItem('sets')) {
+            localStorage.setItem('sets', JSON.stringify(defaultSets));
+        }
+        if (!localStorage.getItem('teamMembers')) {
+            localStorage.setItem('teamMembers', JSON.stringify(defaultTeamMembers));
+        }
+
+        // Toggle pickup location and arrival fields
+        function togglePickupLocation() {
+            const deliveryType = document.querySelector('input[name="delivery-type"]:checked').value;
+            document.getElementById('pickup-location').classList.toggle('hidden', deliveryType !== 'pickup');
+        }
+        function toggleEditPickupLocation() {
+            const deliveryType = document.querySelector('input[name="edit-delivery-type"]:checked').value;
+            document.getElementById('edit-pickup-location').classList.toggle('hidden', deliveryType !== 'pickup');
+        }
+        function toggleArrivalFields() {
+            const status = document.getElementById('status').value;
+            document.getElementById('arrival-single').classList.toggle('hidden', status === 'In Transit');
+            document.getElementById('arrival-range').classList.toggle('hidden', status !== 'In Transit');
+        }
+        function toggleEditArrivalFields() {
+            const status = document.getElementById('edit-status').value;
+            document.getElementById('edit-arrival-single').classList.toggle('hidden', status === 'In Transit');
+            document.getElementById('edit-arrival-range').classList.toggle('hidden', status !== 'In Transit');
+        }
+        document.querySelectorAll('input[name="delivery-type"]').forEach(radio => {
+            radio.addEventListener('change', togglePickupLocation);
+        });
+        document.querySelectorAll('input[name="edit-delivery-type"]').forEach(radio => {
+            radio.addEventListener('change', toggleEditPickupLocation);
+        });
+        document.getElementById('status').addEventListener('change', toggleArrivalFields);
+        document.getElementById('edit-status').addEventListener('change', toggleEditArrivalFields);
+
+        // Tab navigation
+        function showPage(pageId) {
+            document.querySelectorAll('#main-page, #input-order-page, #received-page, #archive-page, #options-page, #deleted-page').forEach(page => {
+                page.classList.add('hidden');
+            });
+            document.getElementById(pageId).classList.remove('hidden');
+            document.querySelectorAll('#main-tab, #input-order-tab, #received-tab, #archive-tab, #options-tab, #deleted-tab').forEach(tab => {
+                tab.classList.remove('tab-active');
+                tab.classList.add('bg-gray-500', 'hover:bg-gray-600');
+            });
+            document.getElementById(`${pageId}-tab`).classList.add('tab-active');
+            document.getElementById(`${pageId}-tab`).classList.remove('bg-gray-500', 'hover:bg-gray-600');
+            if (pageId === 'main-page') loadItems();
+            else if (pageId === 'received-page') loadReceivedItems();
+            else if (pageId === 'archive-page') loadArchivedItems();
+            else if (pageId === 'options-page') { loadSets(); loadTeamMembers(); }
+            else if (pageId === 'deleted-page') loadDeletedItems();
+        }
+        document.getElementById('main-tab').addEventListener('click', () => showPage('main-page'));
+        document.getElementById('input-order-tab').addEventListener('click', () => showPage('input-order-page'));
+        document.getElementById('received-tab').addEventListener('click', () => showPage('received-page'));
+        document.getElementById('archive-tab').addEventListener('click', () => showPage('archive-page'));
+        document.getElementById('options-tab').addEventListener('click', () => showPage('options-page'));
+        document.getElementById('deleted-tab').addEventListener('click', () => showPage('deleted-page'));
+
+        // Load sets
+        function loadSets() {
+            const setSelect = document.getElementById('set-destination');
+            const editSetSelect = document.getElementById('edit-set-destination');
+            const setList = document.getElementById('set-list');
+            setSelect.innerHTML = '<option value="">Select Set</option>';
+            editSetSelect.innerHTML = '<option value="">Select Set</option>';
+            setList.innerHTML = '';
+            let sets = JSON.parse(localStorage.getItem('sets') || '[]');
+            if (navigator.onLine) {
+                db.collection('sets').get().then(snapshot => {
+                    snapshot.forEach(doc => {
+                        const set = { id: doc.id, ...doc.data() };
+                        if (!sets.find(s => s.id === set.id)) sets.push(set);
+                    });
+                    localStorage.setItem('sets', JSON.stringify(sets));
+                    renderSets(sets);
+                }).catch(err => console.error('Firestore error:', err));
+                db.collection('sets').onSnapshot(() => loadSets());
+            } else {
+                renderSets(sets);
+            }
+            function renderSets(sets) {
+                sets.forEach(set => {
+                    const option = document.createElement('option');
+                    option.value = set.name;
+                    option.textContent = set.name;
+                    setSelect.appendChild(option);
+                    editSetSelect.appendChild(option.cloneNode(true));
+                    const div = document.createElement('div');
+                    div.className = 'flex gap-2 items-center';
+                    div.innerHTML = `
+                        <input type="text" value="${set.name}" class="apple-input flex-grow" data-id="${set.id}">
+                        <button class="apple-button update-set" data-id="${set.id}">Update</button>
+                        <button class="apple-button bg-red-500 hover:bg-red-600 delete-set" data-id="${set.id}">Delete</button>
+                    `;
+                    setList.appendChild(div);
+                });
+                document.querySelectorAll('.update-set').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const id = button.getAttribute('data-id');
+                        const input = button.previousElementSibling;
+                        const newName = input.value.trim();
+                        if (!newName) {
+                            alert('Set name cannot be empty.');
+                            return;
+                        }
+                        const sets = JSON.parse(localStorage.getItem('sets') || '[]');
+                        const items = JSON.parse(localStorage.getItem('items') || '[]');
+                        const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+                        const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+                        const set = sets.find(s => s.id === id);
+                        items.forEach(item => {
+                            if (item.setDestination === set.name) item.setDestination = newName;
+                        });
+                        receivedItems.forEach(item => {
+                            if (item.setDestination === set.name) item.setDestination = newName;
+                        });
+                        deletedItems.forEach(item => {
+                            if (item.setDestination === set.name) item.setDestination = newName;
+                        });
+                        set.name = newName;
+                        localStorage.setItem('sets', JSON.stringify(sets));
+                        localStorage.setItem('items', JSON.stringify(items));
+                        localStorage.setItem('receivedItems', JSON.stringify(receivedItems));
+                        localStorage.setItem('deletedItems', JSON.stringify(deletedItems));
+                        if (navigator.onLine) {
+                            db.collection('sets').doc(id).set({ name: newName });
+                            items.forEach(item => {
+                                if (item.setDestination === newName) db.collection('items').doc(item.id).set(item);
+                            });
+                            receivedItems.forEach(item => {
+                                if (item.setDestination === newName) db.collection('receivedItems').doc(item.id).set(item);
+                            });
+                            deletedItems.forEach(item => {
+                                if (item.setDestination === newName) db.collection('deletedItems').doc(item.id).set(item);
+                            });
+                        }
+                        loadSets();
+                        loadItems();
+                        loadReceivedItems();
+                        loadDeletedItems();
+                    });
+                });
+                document.querySelectorAll('.delete-set').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const id = button.getAttribute('data-id');
+                        const sets = JSON.parse(localStorage.getItem('sets') || '[]');
+                        const items = JSON.parse(localStorage.getItem('items') || '[]');
+                        const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+                        const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+                        const archivedItems = JSON.parse(localStorage.getItem('archivedItems') || '[]');
+                        const set = sets.find(s => s.id === id);
+                        const setItems = items.filter(item => item.setDestination === set.name);
+                        const setReceivedItems = receivedItems.filter(item => item.setDestination === set.name);
+                        const setDeletedItems = deletedItems.filter(item => item.setDestination === set.name);
+                        setItems.forEach(item => {
+                            item.archivedSet = set.name;
+                            archivedItems.push(item);
+                            if (navigator.onLine) db.collection('archivedItems').doc(item.id).set(item);
+                        });
+                        setReceivedItems.forEach(item => {
+                            item.archivedSet = set.name;
+                            archivedItems.push(item);
+                            if (navigator.onLine) db.collection('archivedItems').doc(item.id).set(item);
+                        });
+                        setDeletedItems.forEach(item => {
+                            item.archivedSet = set.name;
+                            archivedItems.push(item);
+                            if (navigator.onLine) db.collection('archivedItems').doc(item.id).set(item);
+                        });
+                        localStorage.setItem('archivedItems', JSON.stringify(archivedItems));
+                        localStorage.setItem('items', JSON.stringify(items.filter(item => item.setDestination !== set.name)));
+                        localStorage.setItem('receivedItems', JSON.stringify(receivedItems.filter(item => item.setDestination !== set.name)));
+                        localStorage.setItem('deletedItems', JSON.stringify(deletedItems.filter(item => item.setDestination !== set.name)));
+                        localStorage.setItem('sets', JSON.stringify(sets.filter(s => s.id !== id)));
+                        if (navigator.onLine) {
+                            db.collection('sets').doc(id).delete();
+                            setItems.forEach(item => db.collection('items').doc(item.id).delete());
+                            setReceivedItems.forEach(item => db.collection('receivedItems').doc(item.id).delete());
+                            setDeletedItems.forEach(item => db.collection('deletedItems').doc(item.id).delete());
+                        }
+                        loadSets();
+                        loadItems();
+                        loadReceivedItems();
+                        loadDeletedItems();
+                        loadArchivedItems();
+                    });
+                });
+            }
+        }
+
+        // Load team members
+        function loadTeamMembers() {
+            const goesToSelect = document.getElementById('goes-to');
+            const editGoesToSelect = document.getElementById('edit-goes-to');
+            const receivedBySelect = document.getElementById('received-by');
+            const teamMemberList = document.getElementById('team-member-list');
+            goesToSelect.innerHTML = '<option value="">Select Goes To</option>';
+            editGoesToSelect.innerHTML = '<option value="">Select Goes To</option>';
+            receivedBySelect.innerHTML = '<option value="">Select Received By</option>';
+            teamMemberList.innerHTML = '';
+            let teamMembers = JSON.parse(localStorage.getItem('teamMembers') || '[]');
+            if (navigator.onLine) {
+                db.collection('teamMembers').get().then(snapshot => {
+                    snapshot.forEach(doc => {
+                        const member = { id: doc.id, ...doc.data() };
+                        if (!teamMembers.find(m => m.id === member.id)) teamMembers.push(member);
+                    });
+                    localStorage.setItem('teamMembers', JSON.stringify(teamMembers));
+                    renderTeamMembers(teamMembers);
+                }).catch(err => console.error('Firestore error:', err));
+                db.collection('teamMembers').onSnapshot(() => loadTeamMembers());
+            } else {
+                renderTeamMembers(teamMembers);
+            }
+            function renderTeamMembers(teamMembers) {
+                teamMembers.forEach(member => {
+                    const option = document.createElement('option');
+                    option.value = member.name;
+                    option.textContent = member.name;
+                    goesToSelect.appendChild(option);
+                    editGoesToSelect.appendChild(option.cloneNode(true));
+                    receivedBySelect.appendChild(option.cloneNode(true));
+                    const div = document.createElement('div');
+                    div.className = 'flex gap-2 items-center';
+                    div.innerHTML = `
+                        <input type="text" value="${member.name}" class="apple-input flex-grow" data-id="${member.id}">
+                        <button class="apple-button update-team-member" data-id="${member.id}">Update</button>
+                        <button class="apple-button bg-red-500 hover:bg-red-600 delete-team-member" data-id="${member.id}">Delete</button>
+                    `;
+                    teamMemberList.appendChild(div);
+                });
+                document.querySelectorAll('.update-team-member').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const id = button.getAttribute('data-id');
+                        const input = button.previousElementSibling;
+                        const newName = input.value.trim();
+                        if (!newName) {
+                            alert('Team member name cannot be empty.');
+                            return;
+                        }
+                        const teamMembers = JSON.parse(localStorage.getItem('teamMembers') || '[]');
+                        const items = JSON.parse(localStorage.getItem('items') || '[]');
+                        const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+                        const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+                        const archivedItems = JSON.parse(localStorage.getItem('archivedItems') || '[]');
+                        const member = teamMembers.find(m => m.id === id);
+                        items.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = newName;
+                            if (item.receivedBy === member.name) item.receivedBy = newName;
+                        });
+                        receivedItems.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = newName;
+                            if (item.receivedBy === member.name) item.receivedBy = newName;
+                        });
+                        deletedItems.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = newName;
+                            if (item.receivedBy === member.name) item.receivedBy = newName;
+                        });
+                        archivedItems.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = newName;
+                            if (item.receivedBy === member.name) item.receivedBy = newName;
+                        });
+                        member.name = newName;
+                        localStorage.setItem('teamMembers', JSON.stringify(teamMembers));
+                        localStorage.setItem('items', JSON.stringify(items));
+                        localStorage.setItem('receivedItems', JSON.stringify(receivedItems));
+                        localStorage.setItem('deletedItems', JSON.stringify(deletedItems));
+                        localStorage.setItem('archivedItems', JSON.stringify(archivedItems));
+                        if (navigator.onLine) {
+                            db.collection('teamMembers').doc(id).set({ name: newName });
+                            items.forEach(item => {
+                                if (item.goesTo === newName || item.receivedBy === newName) db.collection('items').doc(item.id).set(item);
+                            });
+                            receivedItems.forEach(item => {
+                                if (item.goesTo === newName || item.receivedBy === newName) db.collection('receivedItems').doc(item.id).set(item);
+                            });
+                            deletedItems.forEach(item => {
+                                if (item.goesTo === newName || item.receivedBy === newName) db.collection('deletedItems').doc(item.id).set(item);
+                            });
+                            archivedItems.forEach(item => {
+                                if (item.goesTo === newName || item.receivedBy === newName) db.collection('archivedItems').doc(item.id).set(item);
+                            });
+                        }
+                        loadTeamMembers();
+                        loadItems();
+                        loadReceivedItems();
+                        loadDeletedItems();
+                        loadArchivedItems();
+                    });
+                });
+                document.querySelectorAll('.delete-team-member').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const id = button.getAttribute('data-id');
+                        const teamMembers = JSON.parse(localStorage.getItem('teamMembers') || '[]');
+                        const items = JSON.parse(localStorage.getItem('items') || '[]');
+                        const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+                        const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+                        const archivedItems = JSON.parse(localStorage.getItem('archivedItems') || '[]');
+                        const member = teamMembers.find(m => m.id === id);
+                        items.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = '';
+                            if (item.receivedBy === member.name) item.receivedBy = '';
+                        });
+                        receivedItems.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = '';
+                            if (item.receivedBy === member.name) item.receivedBy = '';
+                        });
+                        deletedItems.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = '';
+                            if (item.receivedBy === member.name) item.receivedBy = '';
+                        });
+                        archivedItems.forEach(item => {
+                            if (item.goesTo === member.name) item.goesTo = '';
+                            if (item.receivedBy === member.name) item.receivedBy = '';
+                        });
+                        localStorage.setItem('teamMembers', JSON.stringify(teamMembers.filter(m => m.id !== id)));
+                        localStorage.setItem('items', JSON.stringify(items));
+                        localStorage.setItem('receivedItems', JSON.stringify(receivedItems));
+                        localStorage.setItem('deletedItems', JSON.stringify(deletedItems));
+                        localStorage.setItem('archivedItems', JSON.stringify(archivedItems));
+                        if (navigator.onLine) {
+                            db.collection('teamMembers').doc(id).delete();
+                            items.forEach(item => {
+                                if (item.goesTo === '' || item.receivedBy === '') db.collection('items').doc(item.id).set(item);
+                            });
+                            receivedItems.forEach(item => {
+                                if (item.goesTo === '' || item.receivedBy === '') db.collection('receivedItems').doc(item.id).set(item);
+                            });
+                            deletedItems.forEach(item => {
+                                if (item.goesTo === '' || item.receivedBy === '') db.collection('deletedItems').doc(item.id).set(item);
+                            });
+                            archivedItems.forEach(item => {
+                                if (item.goesTo === '' || item.receivedBy === '') db.collection('archivedItems').doc(item.id).set(item);
+                            });
+                        }
+                        loadTeamMembers();
+                        loadItems();
+                        loadReceivedItems();
+                        loadDeletedItems();
+                        loadArchivedItems();
+                    });
+                });
+            }
+        }
+
+        // Add team member
+        document.getElementById('add-team-member').addEventListener('click', () => {
+            const name = document.getElementById('new-team-member').value.trim();
+            if (!name) {
+                alert('Team member name cannot be empty.');
+                return;
+            }
+            const teamMembers = JSON.parse(localStorage.getItem('teamMembers') || '[]');
+            const newMember = { id: Date.now().toString(), name };
+            teamMembers.push(newMember);
+            localStorage.setItem('teamMembers', JSON.stringify(teamMembers));
+            if (navigator.onLine) {
+                db.collection('teamMembers').doc(newMember.id).set(newMember);
+            }
+            document.getElementById('new-team-member').value = '';
+            loadTeamMembers();
+        });
+
+        // Load items
+        function loadItems() {
             const tbody = document.getElementById('item-table-body');
             tbody.innerHTML = '';
             let items = JSON.parse(localStorage.getItem('items') || '[]');
-
-            // Sync with Firestore
-            const snapshot = await db.collection('items').get();
-            snapshot.forEach(doc => {
-                const item = { id: doc.id, ...doc.data() };
-                if (!items.find(i => i.id === item.id)) items.push(item);
-            });
-            localStorage.setItem('items', JSON.stringify(items));
-
-            // Filter and display
-            const search = document.getElementById('search').value.toLowerCase();
-            const status = document.getElementById('filter-status').value;
-            items.filter(item => 
-                (!search || item.name.toLowerCase().includes(search)) &&
-                (!status || item.status === status)
-            ).forEach(item => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-100 transition';
-                tr.innerHTML = `
-                    <td class="p-2"><img src="${item.image || ''}" class="w-12 h-12 object-cover rounded" onerror="this.style.display='none'"></td>
-                    <td class="p-2">${item.name}</td>
-                    <td class="p-2">${item.quantity}</td>
-                    <td class="p-2">${item.supplier}</td>
-                    <td class="p-2">${item.purchaseDate}</td>
-                    <td class="p-2">$${item.cost}</td>
-                    <td class="p-2">${item.orderNumber}</td>
-                    <td class="p-2">${item.setDestination}</td>
-                    <td class="p-2"><span class="px-2 py-1 rounded text-white ${item.status === 'Ordered' ? 'bg-yellow-500' : item.status === 'In Transit' ? 'bg-blue-500' : 'bg-green-500'}">${item.status}</span></td>
-                `;
-                tbody.appendChild(tr);
-            });
+            if (navigator.onLine) {
+                db.collection('items').get().then(snapshot => {
+                    snapshot.forEach(doc => {
+                        const item = { id: doc.id, ...doc.data() };
+                        if (!items.find(i => i.id === item.id)) items.push(item);
+                    });
+                    localStorage.setItem('items', JSON.stringify(items));
+                    renderItems(items);
+                }).catch(err => console.error('Firestore error:', err));
+                db.collection('items').onSnapshot(() => loadItems());
+            } else {
+                renderItems(items);
+            }
+            function renderItems(items) {
+                const teamMembers = JSON.parse(localStorage.getItem('teamMembers') || '[]');
+                const search = document.getElementById('search').value.toLowerCase();
+                const status = document.getElementById('filter-status').value;
+                items.filter(item => 
+                    (!search || item.name.toLowerCase().includes(search)) &&
+                    (!status || item.status === status)
+                ).forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-gray-100 transition';
+                    const arrivalDisplay = item.status === 'In Transit' && item.expectedArrivalStartDate ? 
+                        `${item.expectedArrivalStartDate} ${item.expectedArrivalStartTime} - ${item.expectedArrivalEndDate} ${item.expectedArrivalEndTime}` : 
+                        item.expectedArrival || '';
+                    tr.innerHTML = `
+                        <td class="p-3"><img src="${item.image || ''}" class="w-10 h-10 object-cover rounded" onerror="this.style.display='none'"></td>
+                        <td class="p-3">${item.name}</td>
+                        <td class="p-3">${item.quantity}</td>
+                        <td class="p-3">${item.supplier}</td>
+                        <td class="p-3">${item.purchaseDate}</td>
+                        <td class="p-3">${arrivalDisplay}</td>
+                        <td class="p-3">$${item.cost}</td>
+                        <td class="p-3">${item.orderNumber}</td>
+                        <td class="p-3">${item.setDestination}</td>
+                        <td class="p-3"><span class="px-2 py-1 rounded text-white ${item.status === 'Ordered' ? 'bg-yellow-500' : item.status === 'In Transit' ? 'bg-blue-500' : 'bg-green-500'}">${item.status}</span></td>
+                        <td class="p-3">${item.goesTo || ''}</td>
+                        <td class="p-3">${item.receivedBy || ''}</td>
+                        <td class="p-3">${item.pickupLocation || ''}</td>
+                        <td class="p-3"><button class="mark-received apple-button text-sm" data-id="${item.id}">Mark Received</button></td>
+                        <td class="p-3"><button class="edit-item apple-button text-sm" data-id="${item.id}">Edit</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                    tr.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('edit-item') || e.target.classList.contains('mark-received')) {
+                            console.log('Button clicked, skipping details modal');
+                            return;
+                        }
+                        console.log('Opening details modal for item:', item.id);
+                        document.getElementById('detail-name').textContent = item.name;
+                        document.getElementById('detail-quantity').textContent = item.quantity;
+                        document.getElementById('detail-supplier').textContent = item.supplier;
+                        document.getElementById('detail-purchase-date').textContent = item.purchaseDate || 'N/A';
+                        document.getElementById('detail-expected-arrival').textContent = arrivalDisplay;
+                        document.getElementById('detail-cost').textContent = item.cost ? `$${item.cost}` : 'N/A';
+                        document.getElementById('detail-order-number').textContent = item.orderNumber || 'N/A';
+                        document.getElementById('detail-set-destination').textContent = item.setDestination;
+                        document.getElementById('detail-status').textContent = item.status;
+                        document.getElementById('detail-goes-to').textContent = item.goesTo || 'N/A';
+                        document.getElementById('detail-received-by').textContent = item.receivedBy || 'N/A';
+                        document.getElementById('detail-delivery-type').textContent = item.deliveryType || 'N/A';
+                        document.getElementById('detail-pickup-location').textContent = item.pickupLocation || 'N/A';
+                        document.getElementById('detail-image').src = item.image || '';
+                        document.getElementById('details-modal').classList.remove('hidden');
+                    });
+                    document.querySelectorAll('.edit-item').forEach(button => {
+                        button.addEventListener('click', () => {
+                            const id = button.getAttribute('data-id');
+                            const item = items.find(i => i.id === id);
+                            document.getElementById('edit-item-id').value = item.id;
+                            document.getElementById('edit-item-name').value = item.name;
+                            document.getElementById('edit-quantity').value = item.quantity;
+                            document.getElementById('edit-supplier').value = item.supplier;
+                            document.getElementById('edit-purchase-date').value = item.purchaseDate;
+                            document.getElementById('edit-expected-arrival').value = item.expectedArrival || '';
+                            document.getElementById('edit-expected-arrival-start-date').value = item.expectedArrivalStartDate || '';
+                            document.getElementById('edit-expected-arrival-start-time').value = item.expectedArrivalStartTime || '';
+                            document.getElementById('edit-expected-arrival-end-date').value = item.expectedArrivalEndDate || '';
+                            document.getElementById('edit-expected-arrival-end-time').value = item.expectedArrivalEndTime || '';
+                            document.getElementById('edit-cost').value = item.cost;
+                            document.getElementById('edit-order-number').value = item.orderNumber;
+                            document.getElementById('edit-set-destination').value = item.setDestination;
+                            document.getElementById('edit-status').value = item.status;
+                            document.getElementById('edit-goes-to').value = item.goesTo || '';
+                            document.querySelector(`input[name="edit-delivery-type"][value="${item.deliveryType || 'delivery'}"]`).checked = true;
+                            document.getElementById('edit-pickup-location').value = item.pickupLocation || '';
+                            toggleEditPickupLocation();
+                            toggleEditArrivalFields();
+                            document.getElementById('edit-modal').classList.remove('hidden');
+                        });
+                    });
+                    document.querySelectorAll('.mark-received').forEach(button => {
+                        button.addEventListener('click', () => {
+                            const id = button.getAttribute('data-id');
+                            document.getElementById('received-item-id').value = id;
+                            document.getElementById('received-modal').classList.remove('hidden');
+                        });
+                    });
+                }
+            }
         }
+
+        // Save received item
+        document.getElementById('save-received').addEventListener('click', () => {
+            const id = document.getElementById('received-item-id').value;
+            const receivedBy = document.getElementById('received-by').value;
+            if (!receivedBy) {
+                alert('Please select who received the item.');
+                return;
+            }
+            const items = JSON.parse(localStorage.getItem('items') || '[]');
+            const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+            const item = items.find(i => i.id === id);
+            item.received = true;
+            item.receivedBy = receivedBy;
+            receivedItems.push(item);
+            localStorage.setItem('items', JSON.stringify(items.filter(i => i.id !== id)));
+            localStorage.setItem('receivedItems', JSON.stringify(receivedItems));
+            if (navigator.onLine) {
+                db.collection('items').doc(item.id).delete();
+                db.collection('receivedItems').doc(item.id).set(item);
+            }
+            loadItems();
+            loadReceivedItems();
+            document.getElementById('received-modal').classList.add('hidden');
+        });
+
+        // Delete item
+        document.getElementById('delete-item').addEventListener('click', () => {
+            const id = document.getElementById('edit-item-id').value;
+            const items = JSON.parse(localStorage.getItem('items') || '[]');
+            const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+            const item = items.find(i => i.id === id);
+            item.deletionTimestamp = Date.now();
+            deletedItems.push(item);
+            localStorage.setItem('items', JSON.stringify(items.filter(i => i.id !== id)));
+            localStorage.setItem('deletedItems', JSON.stringify(deletedItems));
+            if (navigator.onLine) {
+                db.collection('items').doc(item.id).delete();
+                db.collection('deletedItems').doc(item.id).set(item);
+            }
+            loadItems();
+            loadDeletedItems();
+            document.getElementById('edit-modal').classList.add('hidden');
+        });
+
+        // Load deleted items
+        function loadDeletedItems() {
+            const container = document.getElementById('deleted-items');
+            container.innerHTML = '';
+            let deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+            deletedItems = deletedItems.filter(item => item.deletionTimestamp > sevenDaysAgo);
+            localStorage.setItem('deletedItems', JSON.stringify(deletedItems));
+            if (navigator.onLine) {
+                db.collection('deletedItems').get().then(snapshot => {
+                    snapshot.forEach(doc => {
+                        const item = { id: doc.id, ...doc.data() };
+                        if (item.deletionTimestamp > sevenDaysAgo && !deletedItems.find(i => i.id === item.id)) {
+                            deletedItems.push(item);
+                        }
+                    });
+                    deletedItems = deletedItems.filter(item => item.deletionTimestamp > sevenDaysAgo);
+                    localStorage.setItem('deletedItems', JSON.stringify(deletedItems));
+                    db.collection('deletedItems').get().then(snapshot => {
+                        snapshot.forEach(doc => {
+                            if (doc.data().deletionTimestamp <= sevenDaysAgo) {
+                                db.collection('deletedItems').doc(doc.id).delete();
+                            }
+                        });
+                    });
+                    renderDeletedItems(deletedItems);
+                }).catch(err => console.error('Firestore error:', err));
+                db.collection('deletedItems').onSnapshot(() => loadDeletedItems());
+            } else {
+                renderDeletedItems(deletedItems);
+            }
+            function renderDeletedItems(deletedItems) {
+                const sets = [...new Set(deletedItems.map(item => item.setDestination))];
+                sets.forEach(set => {
+                    const div = document.createElement('div');
+                    div.className = 'bg-white p-4 rounded-2xl shadow-lg mb-4';
+                    div.innerHTML = `<h3 class="text-lg font-semibold mb-2">${set}</h3>`;
+                    const table = document.createElement('table');
+                    table.className = 'w-full';
+                    table.innerHTML = `
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="p-3 text-left">Image</th>
+                                <th class="p-3 text-left">Item Name</th>
+                                <th class="p-3 text-left">Quantity</th>
+                                <th class="p-3 text-left">Supplier</th>
+                                <th class="p-3 text-left">Purchase Date</th>
+                                <th class="p-3 text-left">Expected Arrival</th>
+                                <th class="p-3 text-left">Cost</th>
+                                <th class="p-3 text-left">Order Number</th>
+                                <th class="p-3 text-left">Status</th>
+                                <th class="p-3 text-left">Goes To</th>
+                                <th class="p-3 text-left">Received By</th>
+                                <th class="p-3 text-left">Pickup Location</th>
+                                <th class="p-3 text-left">Deletion Date</th>
+                                <th class="p-3 text-left">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${deletedItems.filter(item => item.setDestination === set).map(item => {
+                                const arrivalDisplay = item.status === 'In Transit' && item.expectedArrivalStartDate ? 
+                                    `${item.expectedArrivalStartDate} ${item.expectedArrivalStartTime} - ${item.expectedArrivalEndDate} ${item.expectedArrivalEndTime}` : 
+                                    item.expectedArrival || '';
+                                const deletionDate = new Date(item.deletionTimestamp).toLocaleDateString('en-US');
+                                return `
+                                    <tr class="hover:bg-gray-100 transition">
+                                        <td class="p-3"><img src="${item.image || ''}" class="w-10 h-10 object-cover rounded" onerror="this.style.display='none'"></td>
+                                        <td class="p-3">${item.name}</td>
+                                        <td class="p-3">${item.quantity}</td>
+                                        <td class="p-3">${item.supplier}</td>
+                                        <td class="p-3">${item.purchaseDate}</td>
+                                        <td class="p-3">${arrivalDisplay}</td>
+                                        <td class="p-3">$${item.cost}</td>
+                                        <td class="p-3">${item.orderNumber}</td>
+                                        <td class="p-3"><span class="px-2 py-1 rounded text-white ${item.status === 'Ordered' ? 'bg-yellow-500' : item.status === 'In Transit' ? 'bg-blue-500' : 'bg-green-500'}">${item.status}</span></td>
+                                        <td class="p-3">${item.goesTo || ''}</td>
+                                        <td class="p-3">${item.receivedBy || ''}</td>
+                                        <td class="p-3">${item.pickupLocation || ''}</td>
+                                        <td class="p-3">${deletionDate}</td>
+                                        <td class="p-3"><button class="restore-item apple-button text-sm bg-green-500 hover:bg-green-600" data-id="${item.id}">Restore Order</button></td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    `;
+                    div.appendChild(table);
+                    container.appendChild(div);
+                });
+                document.querySelectorAll('.restore-item').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const id = button.getAttribute('data-id');
+                        const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+                        const items = JSON.parse(localStorage.getItem('items') || '[]');
+                        const item = deletedItems.find(i => i.id === id);
+                        delete item.deletionTimestamp;
+                        item.received = false;
+                        item.receivedBy = '';
+                        items.push(item);
+                        localStorage.setItem('items', JSON.stringify(items));
+                        localStorage.setItem('deletedItems', JSON.stringify(deletedItems.filter(i => i.id !== id)));
+                        if (navigator.onLine) {
+                            db.collection('deletedItems').doc(item.id).delete();
+                            db.collection('items').doc(item.id).set(item);
+                        }
+                        loadItems();
+                        loadDeletedItems();
+                    });
+                });
+            }
+        }
+
+        // Cancel received
+        document.getElementById('cancel-received').addEventListener('click', () => {
+            document.getElementById('received-modal').classList.add('hidden');
+        });
+
+        // Cancel edit
+        document.getElementById('cancel-edit').addEventListener('click', () => {
+            document.getElementById('edit-modal').classList.add('hidden');
+        });
+
+        // Close details modal
+        document.getElementById('close-details').addEventListener('click', () => {
+            document.getElementById('details-modal').classList.add('hidden');
+        });
 
         // Add item
         document.getElementById('add-item').addEventListener('click', async () => {
+            const status = document.getElementById('status').value;
             const item = {
                 id: Date.now().toString(),
                 name: document.getElementById('item-name').value,
                 quantity: document.getElementById('quantity').value,
                 supplier: document.getElementById('supplier').value,
                 purchaseDate: document.getElementById('purchase-date').value,
+                expectedArrival: status !== 'In Transit' ? document.getElementById('expected-arrival').value : '',
+                expectedArrivalStartDate: status === 'In Transit' ? document.getElementById('expected-arrival-start-date').value : '',
+                expectedArrivalStartTime: status === 'In Transit' ? document.getElementById('expected-arrival-start-time').value : '',
+                expectedArrivalEndDate: status === 'In Transit' ? document.getElementById('expected-arrival-end-date').value : '',
+                expectedArrivalEndTime: status === 'In Transit' ? document.getElementById('expected-arrival-end-time').value : '',
                 cost: document.getElementById('cost').value,
                 orderNumber: document.getElementById('order-number').value,
                 setDestination: document.getElementById('set-destination').value,
-                status: document.getElementById('status').value,
+                status: status,
+                goesTo: document.getElementById('goes-to').value,
+                receivedBy: '',
+                deliveryType: document.querySelector('input[name="delivery-type"]:checked').value,
+                pickupLocation: document.querySelector('input[name="delivery-type"]:checked').value === 'pickup' ? document.getElementById('pickup-location').value : '',
                 image: ''
             };
-            const file = document.getElementById('item-image').files[0];
-            if (file) {
-                const ref = storage.ref(`images/${item.id}`);
-                await ref.put(file);
-                item.image = await ref.getDownloadURL();
+            if (!item.name || !item.quantity || !item.setDestination || !item.status) {
+                alert('Please fill in Name, Quantity, Set Destination, and Status.');
+                return;
             }
+            if (item.status === 'In Transit' && (!item.expectedArrivalStartDate || !item.expectedArrivalStartTime || !item.expectedArrivalEndDate || !item.expectedArrivalEndTime)) {
+                alert('Please fill in both arrival dates and times for In Transit status.');
+                return;
+            }
+            const file = document.getElementById('item-image').files[0];
+            if (navigator.onLine && file) {
+                try {
+                    const ref = storage.ref(`images/${item.id}`);
+                    await ref.put(file);
+                    item.image = await ref.getDownloadURL();
+                } catch (error) {
+                    console.error('Storage error:', error);
+                }
+            } else if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    item.image = e.target.result;
+                    saveItem(item);
+                };
+                reader.readAsDataURL(file);
+                return;
+            }
+            saveItem(item);
+        });
 
-            // Save to LocalStorage
+        // Save item
+        function saveItem(item) {
             const items = JSON.parse(localStorage.getItem('items') || '[]');
             items.push(item);
             localStorage.setItem('items', JSON.stringify(items));
-
-            // Save to Firestore
-            await db.collection('items').doc(item.id).set(item);
+            if (navigator.onLine) {
+                db.collection('items').doc(item.id).set(item).catch(err => console.error('Firestore error:', err));
+            }
             loadItems();
-        });
+            // Clear form
+            document.getElementById('item-name').value = '';
+            document.getElementById('quantity').value = '';
+            document.getElementById('supplier').value = '';
+            document.getElementById('purchase-date').value = '';
+            document.getElementById('expected-arrival').value = '';
+            document.getElementById('expected-arrival-start-date').value = '';
+            document.getElementById('expected-arrival-start-time').value = '';
+            document.getElementById('expected-arrival-end-date').value = '';
+            document.getElementById('expected-arrival-end-time').value = '';
+            document.getElementById('cost').value = '';
+            document.getElementById('order-number').value = '';
+            document.getElementById('set-destination').value = '';
+            document.getElementById('status').value = 'Ordered';
+            document.getElementById('goes-to').value = '';
+            document.getElementById('pickup-location').value = '';
+            document.getElementById('item-image').value = '';
+            document.querySelector('input[name="delivery-type"][value="delivery"]').checked = true;
+            togglePickupLocation();
+            toggleArrivalFields();
+        }
 
-        // CSV Upload
-        document.getElementById('csv-upload').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const text = e.target.result;
-                const rows = text.split('\n').slice(1); // Skip header
-                const items = JSON.parse(localStorage.getItem('items') || '[]');
-                for (const row of rows) {
-                    const [name, quantity, supplier, purchaseDate, cost, orderNumber, setDestination, status] = row.split(',');
-                    const item = { id: Date.now().toString() + Math.random(), name, quantity, supplier, purchaseDate, cost, orderNumber, setDestination, status, image: '' };
-                    items.push(item);
-                    await db.collection('items').doc(item.id).set(item);
-                }
-                localStorage.setItem('items', JSON.stringify(items));
-                loadItems();
+        // Save edited item
+        document.getElementById('save-edit').addEventListener('click', async () => {
+            const items = JSON.parse(localStorage.getItem('items') || '[]');
+            const id = document.getElementById('edit-item-id').value;
+            const index = items.findIndex(i => i.id === id);
+            const status = document.getElementById('edit-status').value;
+            const file = document.getElementById('edit-item-image').files[0];
+            const item = {
+                id,
+                name: document.getElementById('edit-item-name').value,
+                quantity: document.getElementById('edit-quantity').value,
+                supplier: document.getElementById('edit-supplier').value,
+                purchaseDate: document.getElementById('edit-purchase-date').value,
+                expectedArrival: status !== 'In Transit' ? document.getElementById('edit-expected-arrival').value : '',
+                expectedArrivalStartDate: status === 'In Transit' ? document.getElementById('edit-expected-arrival-start-date').value : '',
+                expectedArrivalStartTime: status === 'In Transit' ? document.getElementById('edit-expected-arrival-start-time').value : '',
+                expectedArrivalEndDate: status === 'In Transit' ? document.getElementById('edit-expected-arrival-end-date').value : '',
+                expectedArrivalEndTime: status === 'In Transit' ? document.getElementById('edit-expected-arrival-end-time').value : '',
+                cost: document.getElementById('edit-cost').value,
+                orderNumber: document.getElementById('edit-order-number').value,
+                setDestination: document.getElementById('edit-set-destination').value,
+                status: status,
+                goesTo: document.getElementById('edit-goes-to').value,
+                receivedBy: items[index].receivedBy || '',
+                deliveryType: document.querySelector('input[name="edit-delivery-type"]:checked').value,
+                pickupLocation: document.querySelector('input[name="edit-delivery-type"]:checked').value === 'pickup' ? document.getElementById('edit-pickup-location').value : '',
+                image: items[index].image
             };
-            reader.readAsText(file);
+            if (!item.name || !item.quantity || !item.setDestination || !item.status) {
+                alert('Please fill in Name, Quantity, Set Destination, and Status.');
+                return;
+            }
+            if (item.status === 'In Transit' && (!item.expectedArrivalStartDate || !item.expectedArrivalStartTime || !item.expectedArrivalEndDate || !item.expectedArrivalEndTime)) {
+                alert('Please fill in both arrival dates and times for In Transit status.');
+                return;
+            }
+            if (navigator.onLine && file) {
+                try {
+                    const ref = storage.ref(`images/${item.id}`);
+                    await ref.put(file);
+                    item.image = await ref.getDownloadURL();
+                } catch (error) {
+                    console.error('Storage error:', error);
+                }
+            } else if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    item.image = e.target.result;
+                    items[index] = item;
+                    localStorage.setItem('items', JSON.stringify(items));
+                    if (navigator.onLine) {
+                        db.collection('items').doc(item.id).set(item).catch(err => console.error('Firestore error:', err));
+                    }
+                    loadItems();
+                    document.getElementById('edit-modal').classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+                return;
+            }
+            items[index] = item;
+            localStorage.setItem('items', JSON.stringify(items));
+            if (navigator.onLine) {
+                db.collection('items').doc(item.id).set(item).catch(err => console.error('Firestore error:', err));
+            }
+            loadItems();
+            document.getElementById('edit-modal').classList.add('hidden');
         });
 
-        // Search and Filter
-        document.getElementById('search').addEventListener('input', loadItems);
-        document.getElementById('filter-status').addEventListener('change', loadItems);
+        // Escape CSV values
+        function escapeCsvValue(value) {
+            if (!value) return '';
+            const str = String(value);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+        }
 
         // Export CSV
         document.getElementById('export-csv').addEventListener('click', () => {
             const items = JSON.parse(localStorage.getItem('items') || '[]');
-            const csv = ['Name,Quantity,Supplier,Purchase Date,Cost,Order Number,Set Destination,Status', ...items.map(i => `${i.name},${i.quantity},${i.supplier},${i.purchaseDate},${i.cost},${i.orderNumber},${i.setDestination},${i.status}`)].join('\n');
+            const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+            const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+            const archivedItems = JSON.parse(localStorage.getItem('archivedItems') || '[]');
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const allItems = [
+                ...items.map(item => ({ ...item, state: 'Active' })),
+                ...receivedItems.map(item => ({ ...item, state: 'Received' })),
+                ...deletedItems.filter(item => item.deletionTimestamp > sevenDaysAgo).map(item => ({ ...item, state: 'Deleted', deletionDate: new Date(item.deletionTimestamp).toLocaleDateString('en-US') })),
+                ...archivedItems.map(item => ({ ...item, state: 'Archived' }))
+            ];
+            const headers = [
+                'Item Name', 'Quantity', 'Supplier', 'Purchase Date', 
+                'Expected Arrival', 'Expected Arrival Start Date', 'Expected Arrival Start Time', 
+                'Expected Arrival End Date', 'Expected Arrival End Time', 
+                'Cost', 'Order Number', 'Set Destination', 'Status', 
+                'Goes To', 'Received By', 'Delivery Type', 'Pickup Location', 
+                'State', 'Deletion Date', 'Archived Set'
+            ];
+            const csvRows = allItems.map(item => {
+                const arrivalDisplay = item.status === 'In Transit' && item.expectedArrivalStartDate ? 
+                    `${item.expectedArrivalStartDate} ${item.expectedArrivalStartTime} - ${item.expectedArrivalEndDate} ${item.expectedArrivalEndTime}` : 
+                    item.expectedArrival || '';
+                return [
+                    escapeCsvValue(item.name),
+                    escapeCsvValue(item.quantity),
+                    escapeCsvValue(item.supplier),
+                    escapeCsvValue(item.purchaseDate),
+                    escapeCsvValue(arrivalDisplay),
+                    escapeCsvValue(item.expectedArrivalStartDate || ''),
+                    escapeCsvValue(item.expectedArrivalStartTime || ''),
+                    escapeCsvValue(item.expectedArrivalEndDate || ''),
+                    escapeCsvValue(item.expectedArrivalEndTime || ''),
+                    escapeCsvValue(item.cost ? `$${item.cost}` : ''),
+                    escapeCsvValue(item.orderNumber),
+                    escapeCsvValue(item.setDestination),
+                    escapeCsvValue(item.status),
+                    escapeCsvValue(item.goesTo || ''),
+                    escapeCsvValue(item.receivedBy || ''),
+                    escapeCsvValue(item.deliveryType),
+                    escapeCsvValue(item.pickupLocation || ''),
+                    escapeCsvValue(item.state),
+                    escapeCsvValue(item.deletionDate || ''),
+                    escapeCsvValue(item.archivedSet || '')
+                ].join(',');
+            });
+            const csv = [headers.join(','), ...csvRows].join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'items.csv';
+            a.download = `SetHardware_Inventory_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
             URL.revokeObjectURL(url);
         });
@@ -205,22 +1170,101 @@
         document.getElementById('export-pdf').addEventListener('click', () => {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
-            doc.text('SetHardware Manager - Item List', 10, 10);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(16);
+            doc.text('SetHardware Manager - Inventory Report', 20, 20);
+            doc.setFontSize(10);
+            doc.text(`Generated on: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 20, 30);
+            doc.setLineWidth(0.5);
+            doc.line(20, 35, 190, 35);
+            let y = 45;
             const items = JSON.parse(localStorage.getItem('items') || '[]');
-            let y = 20;
-            items.forEach(item => {
-                doc.text(`Item: ${item.name}, Qty: ${item.quantity}, Set: ${item.setDestination}, Status: ${item.status}`, 10, y);
+            const receivedItems = JSON.parse(localStorage.getItem('receivedItems') || '[]');
+            const deletedItems = JSON.parse(localStorage.getItem('deletedItems') || '[]');
+            const archivedItems = JSON.parse(localStorage.getItem('archivedItems') || '[]');
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const allItems = [
+                ...items.map(item => ({ ...item, state: 'Active' })),
+                ...receivedItems.map(item => ({ ...item, state: 'Received' })),
+                ...deletedItems.filter(item => item.deletionTimestamp > sevenDaysAgo).map(item => ({ ...item, state: 'Deleted', deletionDate: new Date(item.deletionTimestamp).toLocaleDateString('en-US') })),
+                ...archivedItems.map(item => ({ ...item, state: 'Archived' }))
+            ];
+            const sets = [...new Set(allItems.map(item => item.setDestination || item.archivedSet))];
+            sets.forEach(set => {
+                if (y > 260) {
+                    doc.addPage();
+                    y = 20;
+                }
+                doc.setFontSize(12);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Set: ${set || 'Unassigned'}`, 20, y);
                 y += 10;
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                const setItems = allItems.filter(item => item.setDestination === set || item.archivedSet === set);
+                const headers = ['Item Name', 'Qty', 'Supplier', 'Purchase Date', 'Expected Arrival', 'Cost', 'Order #', 'Status', 'Goes To', 'Received By', 'Delivery', 'Pickup', 'State', 'Deletion Date'];
+                const rows = setItems.map(item => {
+                    const arrivalDisplay = item.status === 'In Transit' && item.expectedArrivalStartDate ? 
+                        `${item.expectedArrivalStartDate} ${item.expectedArrivalStartTime} - ${item.expectedArrivalEndDate} ${item.expectedArrivalEndTime}` : 
+                        item.expectedArrival || '';
+                    return [
+                        item.name,
+                        item.quantity,
+                        item.supplier || '',
+                        item.purchaseDate || '',
+                        arrivalDisplay,
+                        item.cost ? `$${item.cost}` : '',
+                        item.orderNumber || '',
+                        item.status,
+                        item.goesTo || '',
+                        item.receivedBy || '',
+                        item.deliveryType || '',
+                        item.pickupLocation || '',
+                        item.state,
+                        item.deletionDate || ''
+                    ];
+                });
+                doc.autoTable({
+                    startY: y,
+                    head: [headers],
+                    body: rows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontSize: 10 },
+                    bodyStyles: { fontSize: 9 },
+                    columnStyles: {
+                        0: { cellWidth: 30 },
+                        1: { cellWidth: 10 },
+                        2: { cellWidth: 20 },
+                        3: { cellWidth: 20 },
+                        4: { cellWidth: 30 },
+                        5: { cellWidth: 15 },
+                        6: { cellWidth: 20 },
+                        7: { cellWidth: 15 },
+                        8: { cellWidth: 15 },
+                        9: { cellWidth: 15 },
+                        10: { cellWidth: 15 },
+                        11: { cellWidth: 15 },
+                        12: { cellWidth: 15 },
+                        13: { cellWidth: 15 }
+                    },
+                    margin: { left: 20, right: 20 }
+                });
+                y = doc.lastAutoTable.finalY + 10;
+                const totalCost = setItems.reduce((sum, item) => sum + (parseFloat(item.cost) || 0), 0);
+                doc.text(`Total Cost for ${set || 'Unassigned'}: $${totalCost.toFixed(2)}`, 20, y);
+                y += 15;
             });
-            doc.save('items.pdf');
+            doc.setFontSize(8);
+            doc.text(`Page ${doc.getCurrentPageInfo().pageNumber}`, 190, 290, { align: 'right' });
+            doc.save(`SetHardware_Inventory_${new Date().toISOString().split('T')[0]}.pdf`);
         });
 
-        // Real-time Firestore updates
-        db.collection('items').onSnapshot(() => loadItems());
-
         // Initial load
-        loadItems();
+        togglePickupLocation();
+        toggleArrivalFields();
+        loadSets();
+        loadTeamMembers();
+        showPage('main-page');
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </body>
 </html>

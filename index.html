@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SetHardware Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4 text-center">SetHardware Manager</h1>
+
+        <!-- Add Item Form -->
+        <div id="admin-section" class="mb-6 bg-white p-4 rounded-lg shadow-md">
+            <h2 class="text-lg font-semibold mb-2">Add New Item</h2>
+            <div class="grid gap-4">
+                <input id="item-name" type="text" placeholder="Item Name" class="p-2 border rounded">
+                <input id="quantity" type="number" placeholder="Quantity" class="p-2 border rounded">
+                <input id="supplier" type="text" placeholder="Supplier" class="p-2 border rounded">
+                <input id="purchase-date" type="date" class="p-2 border rounded">
+                <input id="cost" type="number" placeholder="Cost" class="p-2 border rounded">
+                <input id="order-number" type="text" placeholder="Order Number" class="p-2 border rounded">
+                <select id="set-destination" class="p-2 border rounded">
+                    <option value="">Select Set</option>
+                    <option value="Set A - Studio Lot">Set A - Studio Lot</option>
+                    <option value="Set B - Warehouse 1">Set B - Warehouse 1</option>
+                </select>
+                <select id="status" class="p-2 border rounded">
+                    <option value="Ordered">Ordered</option>
+                    <option value="In Transit">In Transit</option>
+                    <option value="Delivered">Delivered</option>
+                </select>
+                <input id="item-image" type="file" accept="image/*" class="p-2">
+                <button id="add-item" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition">Add Item</button>
+            </div>
+            <div class="mt-4">
+                <label class="block">Upload CSV</label>
+                <input id="csv-upload" type="file" accept=".csv" class="p-2">
+            </div>
+        </div>
+
+        <!-- Search and Filter -->
+        <div class="mb-4 flex gap-4">
+            <input id="search" type="text" placeholder="Search items..." class="p-2 border rounded flex-grow">
+            <select id="filter-status" class="p-2 border rounded">
+                <option value="">All Statuses</option>
+                <option value="Ordered">Ordered</option>
+                <option value="In Transit">In Transit</option>
+                <option value="Delivered">Delivered</option>
+            </select>
+        </div>
+
+        <!-- Item Table -->
+        <div class="overflow-x-auto">
+            <table id="item-table" class="w-full bg-white rounded-lg shadow-md">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="p-2">Image</th>
+                        <th class="p-2">Item Name</th>
+                        <th class="p-2">Quantity</th>
+                        <th class="p-2">Supplier</th>
+                        <th class="p-2">Purchase Date</th>
+                        <th class="p-2">Cost</th>
+                        <th class="p-2">Order Number</th>
+                        <th class="p-2">Set Destination</th>
+                        <th class="p-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="item-table-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Export Buttons -->
+        <div class="mt-4 flex gap-4">
+            <button id="export-csv" class="bg-green-500 text-white p-2 rounded hover:bg-green-600 transition">Export as CSV</button>
+            <button id="export-pdf" class="bg-purple-500 text-white p-2 rounded hover:bg-purple-600 transition">Export as PDF</button>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration using environment variables
+        const firebaseConfig = {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.FIREBASE_APP_ID
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        db.enablePersistence().catch(err => console.error("Offline persistence error:", err));
+        const storage = firebase.storage();
+
+        // Load items from Firestore and LocalStorage
+        async function loadItems() {
+            const tbody = document.getElementById('item-table-body');
+            tbody.innerHTML = '';
+            let items = JSON.parse(localStorage.getItem('items') || '[]');
+
+            // Sync with Firestore
+            const snapshot = await db.collection('items').get();
+            snapshot.forEach(doc => {
+                const item = { id: doc.id, ...doc.data() };
+                if (!items.find(i => i.id === item.id)) items.push(item);
+            });
+            localStorage.setItem('items', JSON.stringify(items));
+
+            // Filter and display
+            const search = document.getElementById('search').value.toLowerCase();
+            const status = document.getElementById('filter-status').value;
+            items.filter(item => 
+                (!search || item.name.toLowerCase().includes(search)) &&
+                (!status || item.status === status)
+            ).forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-100 transition';
+                tr.innerHTML = `
+                    <td class="p-2"><img src="${item.image || ''}" class="w-12 h-12 object-cover rounded" onerror="this.style.display='none'"></td>
+                    <td class="p-2">${item.name}</td>
+                    <td class="p-2">${item.quantity}</td>
+                    <td class="p-2">${item.supplier}</td>
+                    <td class="p-2">${item.purchaseDate}</td>
+                    <td class="p-2">$${item.cost}</td>
+                    <td class="p-2">${item.orderNumber}</td>
+                    <td class="p-2">${item.setDestination}</td>
+                    <td class="p-2"><span class="px-2 py-1 rounded text-white ${item.status === 'Ordered' ? 'bg-yellow-500' : item.status === 'In Transit' ? 'bg-blue-500' : 'bg-green-500'}">${item.status}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Add item
+        document.getElementById('add-item').addEventListener('click', async () => {
+            const item = {
+                id: Date.now().toString(),
+                name: document.getElementById('item-name').value,
+                quantity: document.getElementById('quantity').value,
+                supplier: document.getElementById('supplier').value,
+                purchaseDate: document.getElementById('purchase-date').value,
+                cost: document.getElementById('cost').value,
+                orderNumber: document.getElementById('order-number').value,
+                setDestination: document.getElementById('set-destination').value,
+                status: document.getElementById('status').value,
+                image: ''
+            };
+            const file = document.getElementById('item-image').files[0];
+            if (file) {
+                const ref = storage.ref(`images/${item.id}`);
+                await ref.put(file);
+                item.image = await ref.getDownloadURL();
+            }
+
+            // Save to LocalStorage
+            const items = JSON.parse(localStorage.getItem('items') || '[]');
+            items.push(item);
+            localStorage.setItem('items', JSON.stringify(items));
+
+            // Save to Firestore
+            await db.collection('items').doc(item.id).set(item);
+            loadItems();
+        });
+
+        // CSV Upload
+        document.getElementById('csv-upload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const text = e.target.result;
+                const rows = text.split('\n').slice(1); // Skip header
+                const items = JSON.parse(localStorage.getItem('items') || '[]');
+                for (const row of rows) {
+                    const [name, quantity, supplier, purchaseDate, cost, orderNumber, setDestination, status] = row.split(',');
+                    const item = { id: Date.now().toString() + Math.random(), name, quantity, supplier, purchaseDate, cost, orderNumber, setDestination, status, image: '' };
+                    items.push(item);
+                    await db.collection('items').doc(item.id).set(item);
+                }
+                localStorage.setItem('items', JSON.stringify(items));
+                loadItems();
+            };
+            reader.readAsText(file);
+        });
+
+        // Search and Filter
+        document.getElementById('search').addEventListener('input', loadItems);
+        document.getElementById('filter-status').addEventListener('change', loadItems);
+
+        // Export CSV
+        document.getElementById('export-csv').addEventListener('click', () => {
+            const items = JSON.parse(localStorage.getItem('items') || '[]');
+            const csv = ['Name,Quantity,Supplier,Purchase Date,Cost,Order Number,Set Destination,Status', ...items.map(i => `${i.name},${i.quantity},${i.supplier},${i.purchaseDate},${i.cost},${i.orderNumber},${i.setDestination},${i.status}`)].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'items.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Export PDF
+        document.getElementById('export-pdf').addEventListener('click', () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text('SetHardware Manager - Item List', 10, 10);
+            const items = JSON.parse(localStorage.getItem('items') || '[]');
+            let y = 20;
+            items.forEach(item => {
+                doc.text(`Item: ${item.name}, Qty: ${item.quantity}, Set: ${item.setDestination}, Status: ${item.status}`, 10, y);
+                y += 10;
+            });
+            doc.save('items.pdf');
+        });
+
+        // Real-time Firestore updates
+        db.collection('items').onSnapshot(() => loadItems());
+
+        // Initial load
+        loadItems();
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</body>
+</html>

@@ -86,7 +86,15 @@
       messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
       appId: "YOUR_APP_ID"
     };
-    firebase.initializeApp(firebaseConfig);
+
+    // Initialize Firebase and Firestore
+    try {
+      firebase.initializeApp(firebaseConfig);
+      console.log('Firebase initialized successfully');
+    } catch (error) {
+      console.error('Firebase initialization failed:', error);
+      alert('Failed to connect to Firebase. Please check your configuration.');
+    }
     const db = firebase.firestore();
 
     // Function to show/hide tabs
@@ -130,12 +138,14 @@
       };
 
       try {
+        console.log('Attempting to add order:', order);
         await db.collection('orders').add(order);
+        console.log('Order added successfully');
         clearForm();
         showTab('orders'); // Switch to orders tab after submission
       } catch (error) {
         console.error('Error adding order:', error);
-        alert('Failed to submit order.');
+        alert(`Failed to submit order: ${error.message}`);
       }
     }
 
@@ -152,14 +162,16 @@
       const receivedBy = prompt('Who received the item?');
       if (receivedBy) {
         try {
+          console.log(`Marking order ${id} as received by ${receivedBy}`);
           await db.collection('orders').doc(id).update({
             status: 'Received',
             receivedBy,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
           });
+          console.log('Order marked as received');
         } catch (error) {
           console.error('Error updating order:', error);
-          alert('Failed to mark order as received.');
+          alert(`Failed to mark order as received: ${error.message}`);
         }
       }
     }
@@ -168,10 +180,12 @@
     async function deleteOrder(id) {
       if (confirm('Are you sure you want to delete this order?')) {
         try {
+          console.log(`Deleting order ${id}`);
           await db.collection('orders').doc(id).delete();
+          console.log('Order deleted successfully');
         } catch (error) {
           console.error('Error deleting order:', error);
-          alert('Failed to delete order.');
+          alert(`Failed to delete order: ${error.message}`);
         }
       }
     }
@@ -181,35 +195,55 @@
       const tbody = document.getElementById('orderTableBody');
       tbody.innerHTML = '';
 
-      db.collection('orders')
-        .orderBy('createdAt', 'desc')
-        .onSnapshot(snapshot => {
-          tbody.innerHTML = '';
-          snapshot.forEach(doc => {
-            const order = doc.data();
-            const row = document.createElement('tr');
-            row.innerHTML = `
-              <td class="px-4 py-2">${order.itemName}</td>
-              <td class="px-4 py-2">${order.source}</td>
-              <td class="px-4 py-2">${order.deliveryMethod}</td>
-              <td class="px-4 py-2">${order.setLocation}</td>
-              <td class="px-4 py-2">${order.status}${order.receivedBy ? ' by ' + order.receivedBy : ''}</td>
-              <td class="px-4 py-2">
-                ${order.status === 'Ordered' ? `<button onclick="markReceived('${doc.id}')" class="text-indigo-600 hover:text-indigo-800 mr-2">Mark Received</button>` : ''}
-                <button onclick="deleteOrder('${doc.id}')" class="text-red-600 hover:text-red-800">Delete</button>
-              </td>
-            `;
-            tbody.appendChild(row);
+      try {
+        db.collection('orders')
+          .orderBy('createdAt', 'desc')
+          .onSnapshot(snapshot => {
+            console.log('Snapshot received:', snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            tbody.innerHTML = '';
+            if (snapshot.empty) {
+              console.log('No orders found');
+              const row = document.createElement('tr');
+              row.innerHTML = '<td colspan="6" class="px-4 py-2 text-center">No orders found</td>';
+              tbody.appendChild(row);
+              return;
+            }
+            snapshot.forEach(doc => {
+              const order = doc.data();
+              const row = document.createElement('tr');
+              row.innerHTML = `
+                <td class="px-4 py-2">${order.itemName}</td>
+                <td class="px-4 py-2">${order.source}</td>
+                <td class="px-4 py-2">${order.deliveryMethod}</td>
+                <td class="px-4 py-2">${order.setLocation}</td>
+                <td class="px-4 py-2">${order.status}${order.receivedBy ? ' by ' + order.receivedBy : ''}</td>
+                <td class="px-4 py-2">
+                  ${order.status === 'Ordered' ? `<button onclick="markReceived('${doc.id}')" class="text-indigo-600 hover:text-indigo-800 mr-2">Mark Received</button>` : ''}
+                  <button onclick="deleteOrder('${doc.id}')" class="text-red-600 hover:text-red-800">Delete</button>
+                </td>
+              `;
+              tbody.appendChild(row);
+            });
+          }, error => {
+            console.error('Error fetching orders:', error);
+            alert(`Failed to load orders: ${error.message}`);
+            tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-2 text-center">Error loading orders</td></tr>';
           });
-        }, error => {
-          console.error('Error fetching orders:', error);
-          alert('Failed to load orders.');
-        });
+      } catch (error) {
+        console.error('Error setting up snapshot listener:', error);
+        alert(`Failed to initialize order listener: ${error.message}`);
+      }
     }
 
     // Initial render and set default tab
-    renderOrders();
-    showTab('orders');
+    try {
+      console.log('Initializing order rendering');
+      renderOrders();
+      showTab('orders');
+    } catch (error) {
+      console.error('Error during initial setup:', error);
+      alert(`Initialization failed: ${error.message}`);
+    }
   </script>
 </body>
 </html>

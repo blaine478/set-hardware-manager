@@ -18,6 +18,8 @@
     // Expose Firebase functions to global scope for React app
     window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, getStorage, ref, uploadBytes, getDownloadURL };
   </script>
+  <!-- Load jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <!-- Load Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -25,6 +27,7 @@
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
+    const { jsPDF } = window.jspdf;
 
     // Firebase configuration for set-hardware project
     const firebaseConfig = {
@@ -49,6 +52,20 @@
       console.error('Firebase initialization error:', error.message);
     }
 
+    // Request notification permission
+    const requestNotificationPermission = async () => {
+      if (!("Notification" in window)) {
+        console.log("Notifications not supported in this browser");
+        return;
+      }
+      try {
+        const permission = await Notification.requestPermission();
+        console.log('Notification permission:', permission);
+      } catch (error) {
+        console.error('Error requesting notification permission:', error.message);
+      }
+    };
+
     function App() {
       const [activeTab, setActiveTab] = useState('home');
       const [formData, setFormData] = useState({
@@ -58,10 +75,12 @@
         deliveryMethod: 'shipped',
         startDate: '',
         endDate: '',
+        deliveryDate: '',
         set: '',
         recipient: '',
         received: false,
-        pickedUpBy: ''
+        pickedUpBy: '',
+        receivedAt: null
       });
       const [image, setImage] = useState(null);
       const [orders, setOrders] = useState([]);
@@ -73,6 +92,15 @@
       const [uploading, setUploading] = useState(false);
       const [error, setError] = useState(null);
       const [selectedOrder, setSelectedOrder] = useState(null);
+      const [showReceivedModal, setShowReceivedModal] = useState(false);
+      const [receivedOrderId, setReceivedOrderId] = useState(null);
+      const [pickedUpBy, setPickedUpBy] = useState('');
+      const [editOrder, setEditOrder] = useState(null);
+
+      // Request notification permission on mount
+      useEffect(() => {
+        requestNotificationPermission();
+      }, []);
 
       // Fetch orders, archived orders, sets, and recipients from Firestore
       useEffect(() => {
@@ -83,7 +111,6 @@
         }
 
         console.log('Setting up Firestore listeners...');
-        // Fetch orders
         const unsubscribeOrders = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
           const ordersData = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -96,7 +123,6 @@
           setError(`Failed to fetch orders: ${err.message} (Code: ${err.code})`);
         });
 
-        // Fetch archived orders
         const unsubscribeArchived = firebase.onSnapshot(firebase.collection(db, 'archive'), (snapshot) => {
           const archivedData = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -109,7 +135,6 @@
           setError(`Failed to fetch archived orders: ${err.message} (Code: ${err.code})`);
         });
 
-        // Fetch sets
         const unsubscribeSets = firebase.onSnapshot(firebase.collection(db, 'sets'), (snapshot) => {
           const setsData = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -122,7 +147,6 @@
           setError(`Failed to fetch sets: ${err.message} (Code: ${err.code})`);
         });
 
-        // Fetch recipients
         const unsubscribeRecipients = firebase.onSnapshot(firebase.collection(db, 'recipients'), (snapshot) => {
           const recipientsData = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -149,6 +173,11 @@
         setFormData(prev => ({ ...prev, [name]: value }));
       };
 
+      const handleEditInputChange = (e) => {
+        const { name, value } = e.target;
+        setEditOrder(prev => ({ ...prev, [name]: value }));
+      };
+
       const handleImageChange = (e) => {
         if (e.target.files[0]) {
           setImage(e.target.files[0]);
@@ -167,7 +196,7 @@
         setError(null);
 
         try {
-          let imageUrl = '';
+          let imageUrl = formData.imageUrl || '';
           if (image) {
             console.log('Uploading image:', image.name);
             const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
@@ -176,10 +205,22 @@
             console.log('Image uploaded successfully, URL:', imageUrl);
           }
 
-          const orderData = { ...formData, imageUrl, timestamp: new Date() };
+          const orderData = {
+            ...formData,
+            imageUrl,
+            timestamp: new Date()
+          };
           console.log('Submitting order:', orderData);
           const docRef = await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
           console.log('Order saved successfully with ID:', docRef.id);
+
+          // Send notification
+          if (Notification.permission === 'granted') {
+            new Notification('New Order Created', {
+              body: `Order "${formData.itemName}" has been created for set "${formData.set}".`,
+              icon: '/icon.png' // Optional: Add an icon URL
+            });
+          }
 
           // Reset form to default values
           setFormData({
@@ -189,10 +230,12 @@
             deliveryMethod: 'shipped',
             startDate: '',
             endDate: '',
+            deliveryDate: '',
             set: '',
             recipient: '',
             received: false,
-            pickedUpBy: ''
+            pickedUpBy: '',
+            receivedAt: null
           });
           setImage(null);
           document.querySelector('input[type="file"]').value = '';
@@ -205,22 +248,138 @@
         }
       };
 
-      const toggleReceived = async (id, currentStatus, pickedUpBy) => {
+      const openReceivedModal = (orderId) => {
+        setReceivedOrderId(orderId);
+        setPickedUpBy('');
+        setShowReceivedModal(true);
+        console.log('Opening received modal for order:', orderId);
+      };
+
+      const closeReceivedModal = () => {
+        setShowReceivedModal(false);
+        setReceivedOrderId(null);
+        setPickedUpBy('');
+        console.log('Closing received modal');
+      };
+
+      const confirmReceived = async () => {
+        if (!firebaseInitialized || !db || !receivedOrderId || !pickedUpBy) {
+          console.error('Firestore not initialized or missing pickup person');
+          setError('Cannot mark as received: Firebase not initialized or pickup person not selected.');
+          return;
+        }
+        try {
+          console.log(`Marking order ${receivedOrderId} as received by ${pickedUpBy}`);
+          await firebase.updateDoc(firebase.doc(db, 'orders', receivedOrderId), {
+            received: true,
+            pickedUpBy,
+            receivedAt: new Date()
+          });
+          console.log('Order marked as received successfully');
+
+          // Send notification
+          if (Notification.permission === 'granted') {
+            const order = orders.find(o => o.id === receivedOrderId);
+            new Notification('Order Received', {
+              body: `Order "${order.itemName}" was received by ${pickedUpBy} for set "${order.set}".`,
+              icon: '/icon.png' // Optional: Add an icon URL
+            });
+          }
+
+          closeReceivedModal();
+        } catch (error) {
+          console.error('Error marking order as received:', error.message, error.code);
+          setError(`Error marking order as received: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const toggleReceived = async (id, currentStatus) => {
         if (!firebaseInitialized || !db) {
           console.error('Firestore not initialized for toggleReceived');
           setError('Firebase not initialized.');
           return;
         }
         try {
-          console.log(`Toggling received status for order ${id}, new status: ${!currentStatus}, pickedUpBy: ${pickedUpBy}`);
+          console.log(`Toggling received status for order ${id}, new status: ${!currentStatus}`);
           await firebase.updateDoc(firebase.doc(db, 'orders', id), {
             received: !currentStatus,
-            pickedUpBy: !currentStatus ? pickedUpBy : ''
+            pickedUpBy: !currentStatus ? '' : '',
+            receivedAt: !currentStatus ? null : null
           });
           console.log('Received status updated successfully');
         } catch (error) {
           console.error('Error updating received status:', error.message, error.code);
           setError(`Error updating status: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const deleteOrder = async (id) => {
+        if (!firebaseInitialized || !db) {
+          console.error('Firestore not initialized for deleteOrder');
+          setError('Firebase not initialized.');
+          return;
+        }
+        if (!window.confirm('Are you sure you want to delete this order? This action cannot be undone.')) return;
+        try {
+          console.log(`Deleting order ID: ${id}`);
+          await firebase.deleteDoc(firebase.doc(db, 'orders', id));
+          console.log('Order deleted successfully');
+        } catch (error) {
+          console.error('Error deleting order:', error.message, error.code);
+          setError(`Error deleting order: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const openEditModal = (order) => {
+        setEditOrder({
+          id: order.id,
+          itemName: order.itemName,
+          pickupFrom: order.pickupFrom,
+          orderNumber: order.orderNumber,
+          deliveryMethod: order.deliveryMethod,
+          startDate: order.startDate || '',
+          endDate: order.endDate || '',
+          deliveryDate: order.deliveryDate || '',
+          set: order.set,
+          recipient: order.recipient,
+          imageUrl: order.imageUrl || ''
+        });
+        setImage(null);
+        console.log('Opening edit modal for order:', order.id);
+      };
+
+      const closeEditModal = () => {
+        setEditOrder(null);
+        setImage(null);
+        console.log('Closing edit modal');
+      };
+
+      const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!firebaseInitialized || !db || !storage) {
+          console.error('Firebase not initialized for edit submit');
+          setError('Firebase not initialized.');
+          return;
+        }
+        try {
+          let imageUrl = editOrder.imageUrl;
+          if (image) {
+            console.log('Uploading new image for edit:', image.name);
+            const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
+            await firebase.uploadBytes(storageRef, image);
+            imageUrl = await firebase.getDownloadURL(storageRef);
+            console.log('Image uploaded successfully, URL:', imageUrl);
+          }
+
+          const updatedOrder = { ...editOrder, imageUrl };
+          console.log('Updating order:', updatedOrder);
+          await firebase.updateDoc(firebase.doc(db, 'orders', editOrder.id), updatedOrder);
+          console.log('Order updated successfully with ID:', editOrder.id);
+          closeEditModal();
+          alert('Order updated successfully!');
+        } catch (error) {
+          console.error('Error updating order:', error.message, error.code);
+          setError(`Error updating order: ${error.message} (Code: ${error.code})`);
         }
       };
 
@@ -350,13 +509,14 @@
           return acc;
         }, {});
 
-        let csvContent = 'Set,Item Name,Pickup From,Order Number,Delivery Method,Shipping Start Date,Shipping End Date,Recipient,Received,Picked Up By,Image URL\n';
+        let csvContent = 'Set,Item Name,Pickup From,Order Number,Delivery Method,Shipping Start Date,Shipping End Date,Delivery Date,Recipient,Received,Picked Up By,Received At,Image URL\n';
         Object.keys(groupedOrders).sort().forEach(setName => {
           groupedOrders[setName]
             .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
             .forEach(order => {
               const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
-              csvContent += `${escapeCsv(setName)},${escapeCsv(order.itemName)},${escapeCsv(order.pickupFrom)},${escapeCsv(order.orderNumber)},${escapeCsv(order.deliveryMethod)},${escapeCsv(order.startDate)},${escapeCsv(order.endDate)},${escapeCsv(order.recipient)},${escapeCsv(status)},${escapeCsv(order.pickedUpBy || '')},${escapeCsv(order.imageUrl || '')}\n`;
+              const receivedAt = order.receivedAt ? new Date(order.receivedAt).toLocaleString() : '';
+              csvContent += `${escapeCsv(setName)},${escapeCsv(order.itemName)},${escapeCsv(order.pickupFrom)},${escapeCsv(order.orderNumber)},${escapeCsv(order.deliveryMethod)},${escapeCsv(order.startDate || '')},${escapeCsv(order.endDate || '')},${escapeCsv(order.deliveryDate || '')},${escapeCsv(order.recipient)},${escapeCsv(status)},${escapeCsv(order.pickedUpBy || '')},${escapeCsv(receivedAt)},${escapeCsv(order.imageUrl || '')}\n`;
             });
         });
         return csvContent;
@@ -376,17 +536,15 @@
         console.log(`Generated CSV file for ${title}`);
       };
 
-      // Function to escape LaTeX special characters
-      const escapeLatex = (str) => {
-        if (!str) return '';
-        return str.replace(/([&%$#_{}])/g, '\\$1')
-                 .replace(/\\/g, '\\textbackslash')
-                 .replace(/~/g, '\\textasciitilde')
-                 .replace(/\^/g, '\\textasciicircum');
-      };
+      // Generate PDF with jsPDF
+      const exportToPDF = (orders, title) => {
+        console.log(`Exporting PDF for ${title}`);
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text(title, 20, 20);
+        doc.setFontSize(12);
+        doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 30);
 
-      // Generate LaTeX for PDF export
-      const generateLatex = (orders, title) => {
         const groupedOrders = orders.reduce((acc, order) => {
           const setName = order.set || 'Unknown Set';
           if (!acc[setName]) acc[setName] = [];
@@ -394,70 +552,59 @@
           return acc;
         }, {});
 
-        let latexContent = `
-\\documentclass{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage{geometry}
-\\geometry{a4paper, margin=1in}
-\\usepackage{booktabs}
-\\usepackage{longtable}
-\\usepackage{hyperref}
-\\usepackage{fancyhdr}
-\\pagestyle{fancy}
-\\fancyhf{}
-\\fancyhead[C]{Hardware Order Report}
-\\fancyfoot[C]{\\thepage}
-\\title{${escapeLatex(title)}}
-\\author{}
-\\date{${new Date().toLocaleDateString()}}
-\\begin{document}
-\\maketitle
-\\section*{Instructions}
-To generate a PDF, compile this file using a LaTeX editor like Overleaf (\\url{https://www.overleaf.com}) with the PDFLaTeX engine. Image URLs are included as clickable links.
-`;
+        let y = 40;
         Object.keys(groupedOrders).sort().forEach(setName => {
-          latexContent += `
-\\section*{Set: ${escapeLatex(setName)}}
-\\begin{longtable}{p{4cm}p{3cm}p{3cm}p{3cm}p{4cm}p{3cm}p{3cm}}
-\\toprule
-Item Name & Pickup From & Order Number & Delivery & Shipping Dates & Recipient & Status \\\\
-\\midrule
-`;
-          groupedOrders[setName]
+          doc.setFontSize(14);
+          doc.text(`Set: ${setName}`, 20, y);
+          y += 10;
+
+          const tableData = groupedOrders[setName]
             .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-            .forEach(order => {
-              const status = order.received ? `Received${order.pickedUpBy ? ' by ' + escapeLatex(order.pickedUpBy) : ''}` : 'Not Received';
-              latexContent += `
-${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLatex(order.orderNumber)} & ${escapeLatex(order.deliveryMethod)} & ${escapeLatex(order.startDate)} to ${escapeLatex(order.endDate)} & ${escapeLatex(order.recipient)} & ${escapeLatex(status)} \\\\
-`;
-              if (order.imageUrl) {
-                latexContent += `\\multicolumn{7}{l}{\\href{${order.imageUrl}}{Image Link}} \\\\`;
-              }
+            .map(order => {
+              const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
+              const dates = order.deliveryMethod === 'pickup' ? order.deliveryDate || '' : `${order.startDate || ''} to ${order.endDate || ''}`;
+              const receivedAt = order.receivedAt ? new Date(order.receivedAt).toLocaleString() : '';
+              return [
+                order.itemName,
+                order.pickupFrom,
+                order.orderNumber,
+                order.deliveryMethod,
+                dates,
+                order.recipient,
+                status,
+                receivedAt,
+                order.imageUrl || ''
+              ];
             });
-          latexContent += `
-\\bottomrule
-\\end{longtable}
-`;
+
+          doc.autoTable({
+            startY: y,
+            head: [['Item Name', 'Pickup From', 'Order Number', 'Delivery', 'Dates', 'Recipient', 'Status', 'Received At', 'Image URL']],
+            body: tableData,
+            theme: 'grid',
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: {
+              0: { cellWidth: 25 },
+              1: { cellWidth: 20 },
+              2: { cellWidth: 20 },
+              3: { cellWidth: 15 },
+              4: { cellWidth: 25 },
+              5: { cellWidth: 20 },
+              6: { cellWidth: 20 },
+              7: { cellWidth: 20 },
+              8: { cellWidth: 25 }
+            }
+          });
+
+          y = doc.lastAutoTable.finalY + 10;
+          if (y > 270) {
+            doc.addPage();
+            y = 20;
+          }
         });
 
-        latexContent += `
-\\end{document}
-`;
-        return latexContent;
-      };
-
-      // Export PDF for a given set of orders
-      const exportToPDF = (orders, title) => {
-        console.log(`Exporting LaTeX for ${title}`);
-        const latexContent = generateLatex(orders, title);
-        const blob = new Blob([latexContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${title.replace(/\s+/g, '_')}.tex`;
-        a.click();
-        URL.revokeObjectURL(url);
-        console.log(`Generated LaTeX file for ${title}`);
+        doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
+        console.log(`Generated PDF file for ${title}`);
       };
 
       // Open modal with order details
@@ -549,6 +696,167 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
             </div>
           )}
 
+          {/* Received Modal */}
+          {showReceivedModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+                <h2 className="text-2xl font-semibold mb-4">Mark Order as Received</h2>
+                <div className="space-y-4">
+                  <p>Select the person who picked up the order:</p>
+                  <select
+                    value={pickedUpBy}
+                    onChange={(e) => setPickedUpBy(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="" disabled>Select Pickup Person</option>
+                    {recipients.map(recipient => (
+                      <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={confirmReceived}
+                      className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                      disabled={!pickedUpBy}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={closeReceivedModal}
+                      className="w-full bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Order Modal */}
+          {editOrder && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+                <h2 className="text-2xl font-semibold mb-4">Edit Order</h2>
+                <form onSubmit={handleEditSubmit} className="space-y-4">
+                  <input
+                    type="text"
+                    name="itemName"
+                    value={editOrder.itemName}
+                    onChange={handleEditInputChange}
+                    placeholder="Item Name"
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="pickupFrom"
+                    value={editOrder.pickupFrom}
+                    onChange={handleEditInputChange}
+                    placeholder="Pickup From"
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="orderNumber"
+                    value={editOrder.orderNumber}
+                    onChange={handleEditInputChange}
+                    placeholder="Order Number"
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                  <select
+                    name="deliveryMethod"
+                    value={editOrder.deliveryMethod}
+                    onChange={handleEditInputChange}
+                    className="w-full p-2 border rounded"
+                  >
+                    <option value="shipped">Shipped</option>
+                    <option value="pickup">Pickup</option>
+                  </select>
+                  {editOrder.deliveryMethod === 'pickup' ? (
+                    <input
+                      type="date"
+                      name="deliveryDate"
+                      value={editOrder.deliveryDate}
+                      onChange={handleEditInputChange}
+                      placeholder="Delivery Date"
+                      className="w-full p-2 border rounded"
+                      required
+                    />
+                  ) : (
+                    <div className="flex space-x-2">
+                      <input
+                        type="date"
+                        name="startDate"
+                        value={editOrder.startDate}
+                        onChange={handleEditInputChange}
+                        placeholder="Shipping Start Date"
+                        className="w-full p-2 border rounded"
+                        required
+                      />
+                      <input
+                        type="date"
+                        name="endDate"
+                        value={editOrder.endDate}
+                        onChange={handleEditInputChange}
+                        placeholder="Shipping End Date"
+                        className="w-full p-2 border rounded"
+                        required
+                      />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    onChange={handleImageChange}
+                    accept="image/*"
+                    className="w-full p-2 border rounded"
+                  />
+                  <select
+                    name="set"
+                    value={editOrder.set}
+                    onChange={handleEditInputChange}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="">Select Set</option>
+                    {sets.map(set => (
+                      <option key={set.id} value={set.name}>{set.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    name="recipient"
+                    value={editOrder.recipient}
+                    onChange={handleEditInputChange}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="">Select Recipient</option>
+                    {recipients.map(recipient => (
+                      <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex space-x-2">
+                    <button
+                      type="submit"
+                      className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                    >
+                      Save Changes
+                    </button>
+                    <button
+                      onClick={closeEditModal}
+                      className="w-full bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* Order Modal */}
           {selectedOrder && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -559,12 +867,15 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
                   <p><strong>Pickup From:</strong> {selectedOrder.pickupFrom}</p>
                   <p><strong>Order Number:</strong> {selectedOrder.orderNumber}</p>
                   <p><strong>Delivery:</strong> {selectedOrder.deliveryMethod}</p>
-                  <p><strong>Shipping Dates:</strong> {selectedOrder.startDate} to {selectedOrder.endDate}</p>
+                  <p><strong>Dates:</strong> {selectedOrder.deliveryMethod === 'pickup' ? selectedOrder.deliveryDate : `${selectedOrder.startDate} to ${selectedOrder.endDate}`}</p>
                   <p><strong>Set:</strong> {selectedOrder.set}</p>
                   <p><strong>Recipient:</strong> {selectedOrder.recipient}</p>
                   <p><strong>Received:</strong> {selectedOrder.received ? 'Yes' : 'No'}</p>
                   {selectedOrder.received && selectedOrder.pickedUpBy && (
                     <p><strong>Picked Up By:</strong> {selectedOrder.pickedUpBy}</p>
+                  )}
+                  {selectedOrder.received && selectedOrder.receivedAt && (
+                    <p><strong>Received At:</strong> {new Date(selectedOrder.receivedAt).toLocaleString()}</p>
                   )}
                   {selectedOrder.imageUrl && (
                     <div>
@@ -588,14 +899,14 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
             <div>
               <div className="flex justify-end space-x-2 mb-4">
                 <button
-                  onClick={() => exportToPDF(activeOrders, 'Active_Orders')}
+                  onClick={() => exportToPDF(activeOrders, 'Active Orders')}
                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                   disabled={!firebaseInitialized}
                 >
-                  Export Active Orders to LaTeX
+                  Export Active Orders to PDF
                 </button>
                 <button
-                  onClick={() => exportToCsv(activeOrders, 'Active_Orders')}
+                  onClick={() => exportToCsv(activeOrders, 'Active Orders')}
                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                   disabled={!firebaseInitialized}
                 >
@@ -603,40 +914,47 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
                 </button>
               </div>
               <h2 className="text-2xl font-semibold mb-4">Active Orders</h2>
-              <p className="text-gray-600 mb-4">To generate a PDF, download the LaTeX file and compile it using a LaTeX editor like Overleaf (https://www.overleaf.com) with PDFLaTeX.</p>
               {activeOrders.length === 0 ? (
                 <p className="text-gray-600">No active orders found.</p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {activeOrders.map(order => (
-                    <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
-                      <h3 className="text-lg font-semibold">{order.itemName}</h3>
+                    <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
+                      <h3 className="text-xl font-semibold mb-2">{order.itemName}</h3>
                       <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
                       <p><strong>Order Number:</strong> {order.orderNumber}</p>
                       <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
-                      <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                      <p><strong>Dates:</strong> {order.deliveryMethod === 'pickup' ? order.deliveryDate : `${order.startDate} to ${order.endDate}`}</p>
                       <p><strong>Set:</strong> {order.set}</p>
                       <p><strong>Recipient:</strong> {order.recipient}</p>
                       <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
                       {order.imageUrl && (
                         <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
                       )}
-                      <div className="mt-2 flex space-x-2">
-                        <select
-                          onChange={(e) => toggleReceived(order.id, order.received, e.target.value)}
-                          className="w-full p-2 border rounded"
-                          defaultValue=""
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => openReceivedModal(order.id)}
+                          className="flex-1 bg-green-500 text-white p-2 rounded hover:bg-green-600"
                         >
-                          <option value="" disabled>Select Pickup Person</option>
-                          {recipients.map(recipient => (
-                            <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                          ))}
-                        </select>
+                          Received
+                        </button>
                         <button
                           onClick={() => openOrderModal(order)}
-                          className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                          className="flex-1 bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                         >
                           Expand
+                        </button>
+                        <button
+                          onClick={() => openEditModal(order)}
+                          className="flex-1 bg-yellow-500 text-white p-2 rounded hover:bg-yellow-600"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => deleteOrder(order.id)}
+                          className="flex-1 bg-red-500 text-white p-2 rounded hover:bg-red-600"
+                        >
+                          Delete
                         </button>
                       </div>
                     </div>
@@ -648,7 +966,7 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
 
           {/* Orders Tab (New Order Form Only) */}
           {activeTab === 'orders' && (
-            <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md">
+            <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300">
               <h2 className="text-2xl font-semibold mb-4">New Order</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <input
@@ -687,26 +1005,38 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
                   <option value="shipped">Shipped</option>
                   <option value="pickup">Pickup</option>
                 </select>
-                <div className="flex space-x-2">
+                {formData.deliveryMethod === 'pickup' ? (
                   <input
                     type="date"
-                    name="startDate"
-                    value={formData.startDate}
+                    name="deliveryDate"
+                    value={formData.deliveryDate}
                     onChange={handleInputChange}
-                    placeholder="Shipping Start Date"
+                    placeholder="Delivery Date"
                     className="w-full p-2 border rounded"
                     required
                   />
-                  <input
-                    type="date"
-                    name="endDate"
-                    value={formData.endDate}
-                    onChange={handleInputChange}
-                    placeholder="Shipping End Date"
-                    className="w-full p-2 border rounded"
-                    required
-                  />
-                </div>
+                ) : (
+                  <div className="flex space-x-2">
+                    <input
+                      type="date"
+                      name="startDate"
+                      value={formData.startDate}
+                      onChange={handleInputChange}
+                      placeholder="Shipping Start Date"
+                      className="w-full p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="date"
+                      name="endDate"
+                      value={formData.endDate}
+                      onChange={handleInputChange}
+                      placeholder="Shipping End Date"
+                      className="w-full p-2 border rounded"
+                      required
+                    />
+                  </div>
+                )}
                 <input
                   type="file"
                   onChange={handleImageChange}
@@ -753,14 +1083,14 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
             <div className="max-w-4xl mx-auto">
               <div className="flex justify-end space-x-2 mb-4">
                 <button
-                  onClick={() => exportToPDF(completedOrders, 'Completed_Orders')}
+                  onClick={() => exportToPDF(completedOrders, 'Completed Orders')}
                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                   disabled={!firebaseInitialized}
                 >
-                  Export Completed Orders to LaTeX
+                  Export Completed Orders to PDF
                 </button>
                 <button
-                  onClick={() => exportToCsv(completedOrders, 'Completed_Orders')}
+                  onClick={() => exportToCsv(completedOrders, 'Completed Orders')}
                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                   disabled={!firebaseInitialized}
                 >
@@ -768,43 +1098,57 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
                 </button>
               </div>
               <h2 className="text-2xl font-semibold mb-4">Completed Orders</h2>
-              <p className="text-gray-600 mb-4">To generate a PDF, download the LaTeX file and compile it using a LaTeX editor like Overleaf (https://www.overleaf.com) with PDFLaTeX.</p>
               {Object.keys(groupedCompletedOrders).length === 0 ? (
                 <p className="text-gray-600">No completed orders found.</p>
               ) : (
                 Object.keys(groupedCompletedOrders).sort().map(setName => (
                   <div key={setName} className="mb-8">
                     <h3 className="text-xl font-semibold mb-4">{setName}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {groupedCompletedOrders[setName]
                         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
                         .map(order => (
-                          <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
-                            <h4 className="text-lg font-semibold">{order.itemName}</h4>
+                          <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
+                            <h4 className="text-lg font-semibold mb-2">{order.itemName}</h4>
                             <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
                             <p><strong>Order Number:</strong> {order.orderNumber}</p>
                             <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
-                            <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                            <p><strong>Dates:</strong> {order.deliveryMethod === 'pickup' ? order.deliveryDate : `${order.startDate} to ${order.endDate}`}</p>
                             <p><strong>Recipient:</strong> {order.recipient}</p>
                             <p><strong>Received:</strong> Yes</p>
                             {order.pickedUpBy && (
                               <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
                             )}
+                            {order.receivedAt && (
+                              <p><strong>Received At:</strong> {new Date(order.receivedAt).toLocaleString()}</p>
+                            )}
                             {order.imageUrl && (
                               <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
                             )}
-                            <div className="mt-2 flex space-x-2">
+                            <div className="mt-4 flex flex-wrap gap-2">
                               <button
-                                onClick={() => toggleReceived(order.id, order.received, '')}
-                                className="w-full bg-gray-500 text-white p-2 rounded hover:bg-blue-600"
+                                onClick={() => toggleReceived(order.id, order.received)}
+                                className="flex-1 bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
                               >
                                 Undo Received
                               </button>
                               <button
                                 onClick={() => openOrderModal(order)}
-                                className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                                className="flex-1 bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                               >
                                 Expand
+                              </button>
+                              <button
+                                onClick={() => openEditModal(order)}
+                                className="flex-1 bg-yellow-500 text-white p-2 rounded hover:bg-yellow-600"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => deleteOrder(order.id)}
+                                className="flex-1 bg-red-500 text-white p-2 rounded hover:bg-red-600"
+                              >
+                                Delete
                               </button>
                             </div>
                           </div>
@@ -818,7 +1162,7 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
 
           {/* Options Tab */}
           {activeTab === 'options' && (
-            <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md">
+            <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300">
               <h2 className="text-2xl font-semibold mb-4">Options</h2>
               <div className="space-y-6">
                 {/* Manage Sets */}
@@ -898,14 +1242,14 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
             <div className="max-w-4xl mx-auto">
               <div className="flex justify-end space-x-2 mb-4">
                 <button
-                  onClick={() => exportToPDF(archivedOrders, 'Archived_Orders')}
+                  onClick={() => exportToPDF(archivedOrders, 'Archived Orders')}
                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                   disabled={!firebaseInitialized}
                 >
-                  Export Archived Orders to LaTeX
+                  Export Archived Orders to PDF
                 </button>
                 <button
-                  onClick={() => exportToCsv(archivedOrders, 'Archived_Orders')}
+                  onClick={() => exportToCsv(archivedOrders, 'Archived Orders')}
                   className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
                   disabled={!firebaseInitialized}
                 >
@@ -913,7 +1257,6 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
                 </button>
               </div>
               <h2 className="text-2xl font-semibold mb-4">Archived Orders</h2>
-              <p className="text-gray-600 mb-4">To generate a PDF, download the LaTeX file and compile it using a LaTeX editor like Overleaf (https://www.overleaf.com) with PDFLaTeX.</p>
               {Object.keys(groupedArchivedOrders).length === 0 ? (
                 <p className="text-gray-600">No archived orders found.</p>
               ) : (
@@ -929,23 +1272,26 @@ ${escapeLatex(order.itemName)} & ${escapeLatex(order.pickupFrom)} & ${escapeLate
                         Restore Set
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {groupedArchivedOrders[setName].map(order => (
-                        <div key={order.id} className="bg-white p-4 rounded-lg shadow-md">
-                          <h4 className="text-lg font-semibold">{order.itemName}</h4>
+                        <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
+                          <h4 className="text-lg font-semibold mb-2">{order.itemName}</h4>
                           <p><strong>Pickup From:</strong> {order.pickupFrom}</p>
                           <p><strong>Order Number:</strong> {order.orderNumber}</p>
                           <p><strong>Delivery:</strong> {order.deliveryMethod}</p>
-                          <p><strong>Shipping Dates:</strong> {order.startDate} to {order.endDate}</p>
+                          <p><strong>Dates:</strong> {order.deliveryMethod === 'pickup' ? order.deliveryDate : `${order.startDate} to ${order.endDate}`}</p>
                           <p><strong>Recipient:</strong> {order.recipient}</p>
                           <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
                           {order.received && order.pickedUpBy && (
                             <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
                           )}
+                          {order.received && order.receivedAt && (
+                            <p><strong>Received At:</strong> {new Date(order.receivedAt).toLocaleString()}</p>
+                          )}
                           {order.imageUrl && (
                             <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
                           )}
-                          <div className="mt-2">
+                          <div className="mt-4">
                             <button
                               onClick={() => openOrderModal(order)}
                               className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"

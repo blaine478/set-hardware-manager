@@ -67,6 +67,31 @@
       }
     };
 
+    // Error Boundary Component
+    function ErrorBoundary({ children }) {
+      const [hasError, setHasError] = useState(false);
+      const [errorMessage, setErrorMessage] = useState('');
+
+      useEffect(() => {
+        const errorHandler = (error) => {
+          console.error('Error in component:', error.message);
+          setHasError(true);
+          setErrorMessage(error.message);
+        };
+        window.addEventListener('error', errorHandler);
+        return () => window.removeEventListener('error', errorHandler);
+      }, []);
+
+      if (hasError) {
+        return (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            Error rendering component: {errorMessage}. Please refresh the page or check the console for details.
+          </div>
+        );
+      }
+      return children;
+    }
+
     function App() {
       const [activeTab, setActiveTab] = useState('home');
       const [formData, setFormData] = useState({
@@ -139,7 +164,7 @@
         const unsubscribeSets = firebase.onSnapshot(firebase.collection(db, 'sets'), (snapshot) => {
           const setsData = snapshot.docs.map(doc => ({
             id: doc.id,
-            name: doc.data().name
+            name: doc.data().name || ''
           }));
           console.log('Fetched sets:', setsData);
           setSets(setsData);
@@ -151,7 +176,7 @@
         const unsubscribeRecipients = firebase.onSnapshot(firebase.collection(db, 'recipients'), (snapshot) => {
           const recipientsData = snapshot.docs.map(doc => ({
             id: doc.id,
-            name: doc.data().name
+            name: doc.data().name || ''
           }));
           console.log('Fetched recipients:', recipientsData);
           setRecipients(recipientsData);
@@ -334,15 +359,15 @@
       const openEditModal = (order) => {
         setEditOrder({
           id: order.id,
-          itemName: order.itemName,
-          pickupFrom: order.pickupFrom,
-          orderNumber: order.orderNumber,
-          deliveryMethod: order.deliveryMethod,
+          itemName: order.itemName || '',
+          pickupFrom: order.pickupFrom || '',
+          orderNumber: order.orderNumber || '',
+          deliveryMethod: order.deliveryMethod || 'shipped',
           startDate: order.startDate || '',
           endDate: order.endDate || '',
           deliveryDate: order.deliveryDate || '',
-          set: order.set,
-          recipient: order.recipient,
+          set: order.set || '',
+          recipient: order.recipient || '',
           imageUrl: order.imageUrl || ''
         });
         setImage(null);
@@ -381,6 +406,117 @@
         } catch (error) {
           console.error('Error updating order:', error.message, error.code);
           setError(`Error updating order: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const addSet = async (e) => {
+        e.preventDefault();
+        if (!firebaseInitialized || !db || !newSet.trim()) {
+          console.error('Firestore not initialized or empty set name');
+          setError('Cannot add set: Firebase not initialized or set name is empty.');
+          return;
+        }
+        try {
+          console.log('Adding set:', newSet.trim());
+          const docRef = await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
+          console.log('Set added successfully with ID:', docRef.id);
+          setNewSet('');
+        } catch (error) {
+          console.error('Error adding set:', error.message, error.code);
+          setError(`Error adding set: ${error.message} (Code: ${err.code})`);
+        }
+      };
+
+      const deleteSet = async (id, setName) => {
+        if (!firebaseInitialized || !db) {
+          console.error('Firestore not initialized for deleteSet');
+          setError('Firebase not initialized.');
+          return;
+        }
+        if (!window.confirm(`Are you sure you want to delete the set "${setName}"? All associated orders will be archived.`)) return;
+        try {
+          console.log(`Deleting set ${setName} (ID: ${id}) and archiving orders`);
+          const ordersQuery = firebase.query(firebase.collection(db, 'orders'), firebase.where('set', '==', setName));
+          const ordersSnapshot = await firebase.getDocs(ordersQuery);
+          console.log(`Found ${ordersSnapshot.size} orders for set ${setName}`);
+
+          const batch = firebase.writeBatch(db);
+          ordersSnapshot.forEach(doc => {
+            const orderData = doc.data();
+            batch.set(firebase.doc(db, 'archive', doc.id), { ...orderData, archivedAt: new Date() });
+            batch.delete(firebase.doc(db, 'orders', doc.id));
+          });
+
+          batch.delete(firebase.doc(db, 'sets', id));
+          await batch.commit();
+          console.log('Set deleted and orders archived successfully');
+        } catch (error) {
+          console.error('Error deleting set:', error.message, error.code);
+          setError(`Error deleting set or archiving orders: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const restoreSet = async (setName) => {
+        if (!firebaseInitialized || !db) {
+          console.error('Firestore not initialized for restoreSet');
+          setError('Firebase not initialized.');
+          return;
+        }
+        try {
+          console.log(`Restoring set ${setName}`);
+          const batch = firebase.writeBatch(db);
+          const setDocRef = firebase.doc(firebase.collection(db, 'sets'));
+          batch.set(setDocRef, { name: setName });
+
+          const archivedQuery = firebase.query(firebase.collection(db, 'archive'), firebase.where('set', '==', setName));
+          const archivedSnapshot = await firebase.getDocs(archivedQuery);
+          console.log(`Found ${archivedSnapshot.size} archived orders for set ${setName}`);
+
+          archivedSnapshot.forEach(doc => {
+            const orderData = doc.data();
+            batch.set(firebase.doc(db, 'orders', doc.id), { ...orderData });
+            batch.delete(firebase.doc(db, 'archive', doc.id));
+          });
+
+          await batch.commit();
+          console.log('Set restored successfully with ID:', setDocRef.id);
+        } catch (error) {
+          console.error('Error restoring set:', error.message, error.code);
+          setError(`Error restoring set: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const addRecipient = async (e) => {
+        e.preventDefault();
+        if (!firebaseInitialized || !db || !newRecipient.trim()) {
+          console.error('Firestore not initialized or empty recipient name');
+          setError('Cannot add recipient: Firebase not initialized or recipient name is empty.');
+          return;
+        }
+        try {
+          console.log('Adding recipient:', newRecipient.trim());
+          const docRef = await firebase.addDoc(firebase.collection(db, 'recipients'), { name: newRecipient.trim() });
+          console.log('Recipient added successfully with ID:', docRef.id);
+          setNewRecipient('');
+        } catch (error) {
+          console.error('Error adding recipient:', error.message, error.code);
+          setError(`Error adding recipient: ${error.message} (Code: ${error.code})`);
+        }
+      };
+
+      const deleteRecipient = async (id) => {
+        if (!firebaseInitialized || !db) {
+          console.error('Firestore not initialized for deleteRecipient');
+          setError('Firebase not initialized.');
+          return;
+        }
+        try {
+          console.log(`Deleting recipient ID: ${id}`);
+          await firebase.deleteDoc(firebase.doc(db, 'recipients', id));
+          console.log('Recipient deleted successfully');
+        } catch (error) {
+          console.error('Error deleting recipient:', error.message, error.code);
+          setError(`Error deleting recipient: ${error.message} (Code: ${error.code})`);
         }
       };
 
@@ -978,6 +1114,93 @@
             </div>
           )}
 
+          {/* Options Tab */}
+          {activeTab === 'options' && (
+            <ErrorBoundary>
+              <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300">
+                <h2 className="text-2xl font-semibold mb-4">Options</h2>
+                <div className="space-y-6">
+                  {/* Manage Sets */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Manage Sets</h3>
+                    <form onSubmit={addSet} className="flex space-x-2 mb-4">
+                      <input
+                        type="text"
+                        value={newSet}
+                        onChange={(e) => setNewSet(e.target.value)}
+                        placeholder="Add New Set"
+                        className="w-full p-2 border rounded"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!firebaseInitialized}
+                        className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
+                      >
+                        Add
+                      </button>
+                    </form>
+                    <ul className="space-y-2">
+                      {sets.length === 0 ? (
+                        <li className="text-gray-600">No sets available.</li>
+                      ) : (
+                        sets.map(set => (
+                          <li key={set.id} className="flex justify-between items-center">
+                            <span>{set.name || 'Unnamed Set'}</span>
+                            <button
+                              onClick={() => deleteSet(set.id, set.name)}
+                              className="text-red-500 hover:text-red-700"
+                              disabled={!firebaseInitialized}
+                            >
+                              Delete
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                  {/* Manage Recipients */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Manage Recipients</h3>
+                    <form onSubmit={addRecipient} className="flex space-x-2 mb-4">
+                      <input
+                        type="text"
+                        value={newRecipient}
+                        onChange={(e) => setNewRecipient(e.target.value)}
+                        placeholder="Add New Recipient"
+                        className="w-full p-2 border rounded"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!firebaseInitialized}
+                        className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
+                      >
+                        Add
+                      </button>
+                    </form>
+                    <ul className="space-y-2">
+                      {recipients.length === 0 ? (
+                        <li className="text-gray-600">No recipients available.</li>
+                      ) : (
+                        recipients.map(recipient => (
+                          <li key={recipient.id} className="flex justify-between items-center">
+                            <span>{recipient.name || 'Unnamed Recipient'}</span>
+                            <button
+                              onClick={() => deleteRecipient(recipient.id)}
+                              className="text-red-500 hover:text-red-700"
+                              disabled={!firebaseInitialized}
+                            >
+                              Delete
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </ErrorBoundary>
+          )}
+
           {/* Completed Orders Tab */}
           {activeTab === 'completed' && (
             <div className="max-w-4xl mx-auto">
@@ -1057,83 +1280,6 @@
                   </div>
                 ))
               )}
-            </div>
-          )}
-
-          {/* Options Tab */}
-          {activeTab === 'options' && (
-            <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300">
-              <h2 className="text-2xl font-semibold mb-4">Options</h2>
-              <div className="space-y-6">
-                {/* Manage Sets */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Manage Sets</h3>
-                  <form onSubmit={addSet} className="flex space-x-2 mb-4">
-                    <input
-                      type="text"
-                      value={newSet}
-                      onChange={(e) => setNewSet(e.target.value)}
-                      placeholder="Add New Set"
-                      className="w-full p-2 border rounded"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!firebaseInitialized}
-                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
-                    >
-                      Add
-                    </button>
-                  </form>
-                  <ul className="space-y-2">
-                    {sets.map(set => (
-                      <li key={set.id} className="flex justify-between items-center">
-                        <span>{set.name}</span>
-                        <button
-                          onClick={() => deleteSet(set.id, set.name)}
-                          className="text-red-500 hover:text-red-700"
-                          disabled={!firebaseInitialized}
-                        >
-                          Delete
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                {/* Manage Recipients */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Manage Recipients</h3>
-                  <form onSubmit={addRecipient} className="flex space-x-2 mb-4">
-                    <input
-                      type="text"
-                      value={newRecipient}
-                      onChange={(e) => setNewRecipient(e.target.value)}
-                      placeholder="Add New Recipient"
-                      className="w-full p-2 border rounded"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!firebaseInitialized}
-                      className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300"
-                    >
-                      Add
-                    </button>
-                  </form>
-                  <ul className="space-y-2">
-                    {recipients.map(recipient => (
-                      <li key={recipient.id} className="flex justify-between items-center">
-                        <span>{recipient.name}</span>
-                        <button
-                          onClick={() => deleteRecipient(recipient.id)}
-                          className="text-red-500 hover:text-red-700"
-                          disabled={!firebaseInitialized}
-                        >
-                          Delete
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
             </div>
           )}
 

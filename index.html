@@ -18,8 +18,9 @@
     // Expose Firebase functions to global scope for React app
     window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, getStorage, ref, uploadBytes, getDownloadURL };
   </script>
-  <!-- Load jsPDF -->
+  <!-- Load jsPDF and jspdf-autotable -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
   <!-- Load Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -218,7 +219,7 @@
           if (Notification.permission === 'granted') {
             new Notification('New Order Created', {
               body: `Order "${formData.itemName}" has been created for set "${formData.set}".`,
-              icon: '/icon.png' // Optional: Add an icon URL
+              icon: '/icon.png'
             });
           }
 
@@ -282,7 +283,7 @@
             const order = orders.find(o => o.id === receivedOrderId);
             new Notification('Order Received', {
               body: `Order "${order.itemName}" was received by ${pickedUpBy} for set "${order.set}".`,
-              icon: '/icon.png' // Optional: Add an icon URL
+              icon: '/icon.png'
             });
           }
 
@@ -383,117 +384,6 @@
         }
       };
 
-      const addSet = async (e) => {
-        e.preventDefault();
-        if (!firebaseInitialized || !db || !newSet.trim()) {
-          console.error('Firestore not initialized or empty set name');
-          setError('Cannot add set: Firebase not initialized or set name is empty.');
-          return;
-        }
-        try {
-          console.log('Adding set:', newSet.trim());
-          const docRef = await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
-          console.log('Set added successfully with ID:', docRef.id);
-          setNewSet('');
-        } catch (error) {
-          console.error('Error adding set:', error.message, error.code);
-          setError(`Error adding set: ${error.message} (Code: ${error.code})`);
-        }
-      };
-
-      const deleteSet = async (id, setName) => {
-        if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for deleteSet');
-          setError('Firebase not initialized.');
-          return;
-        }
-        if (!window.confirm(`Are you sure you want to delete the set "${setName}"? All associated orders will be archived.`)) return;
-        try {
-          console.log(`Deleting set ${setName} (ID: ${id}) and archiving orders`);
-          const ordersQuery = firebase.query(firebase.collection(db, 'orders'), firebase.where('set', '==', setName));
-          const ordersSnapshot = await firebase.getDocs(ordersQuery);
-          console.log(`Found ${ordersSnapshot.size} orders for set ${setName}`);
-
-          const batch = firebase.writeBatch(db);
-          ordersSnapshot.forEach(doc => {
-            const orderData = doc.data();
-            batch.set(firebase.doc(db, 'archive', doc.id), { ...orderData, archivedAt: new Date() });
-            batch.delete(firebase.doc(db, 'orders', doc.id));
-          });
-
-          batch.delete(firebase.doc(db, 'sets', id));
-          await batch.commit();
-          console.log('Set deleted and orders archived successfully');
-        } catch (error) {
-          console.error('Error deleting set:', error.message, error.code);
-          setError(`Error deleting set or archiving orders: ${error.message} (Code: ${error.code})`);
-        }
-      };
-
-      const restoreSet = async (setName) => {
-        if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for restoreSet');
-          setError('Firebase not initialized.');
-          return;
-        }
-        try {
-          console.log(`Restoring set ${setName}`);
-          const batch = firebase.writeBatch(db);
-          const setDocRef = firebase.doc(firebase.collection(db, 'sets'));
-          batch.set(setDocRef, { name: setName });
-
-          const archivedQuery = firebase.query(firebase.collection(db, 'archive'), firebase.where('set', '==', setName));
-          const archivedSnapshot = await firebase.getDocs(archivedQuery);
-          console.log(`Found ${archivedSnapshot.size} archived orders for set ${setName}`);
-
-          archivedSnapshot.forEach(doc => {
-            const orderData = doc.data();
-            batch.set(firebase.doc(db, 'orders', doc.id), { ...orderData });
-            batch.delete(firebase.doc(db, 'archive', doc.id));
-          });
-
-          await batch.commit();
-          console.log('Set restored successfully with ID:', setDocRef.id);
-        } catch (error) {
-          console.error('Error restoring set:', error.message, error.code);
-          setError(`Error restoring set: ${error.message} (Code: ${error.code})`);
-        }
-      };
-
-      const addRecipient = async (e) => {
-        e.preventDefault();
-        if (!firebaseInitialized || !db || !newRecipient.trim()) {
-          console.error('Firestore not initialized or empty recipient name');
-          setError('Cannot add recipient: Firebase not initialized or recipient name is empty.');
-          return;
-        }
-        try {
-          console.log('Adding recipient:', newRecipient.trim());
-          const docRef = await firebase.addDoc(firebase.collection(db, 'recipients'), { name: newRecipient.trim() });
-          console.log('Recipient added successfully with ID:', docRef.id);
-          setNewRecipient('');
-        } catch (error) {
-          console.error('Error adding recipient:', error.message, error.code);
-          setError(`Error adding recipient: ${error.message} (Code: ${error.code})`);
-        }
-      };
-
-      const deleteRecipient = async (id) => {
-        if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for deleteRecipient');
-          setError('Firebase not initialized.');
-          return;
-        }
-        try {
-          console.log(`Deleting recipient ID: ${id}`);
-          await firebase.deleteDoc(firebase.doc(db, 'recipients', id));
-          console.log('Recipient deleted successfully');
-        } catch (error) {
-          console.error('Error deleting recipient:', error.message, error.code);
-          setError(`Error deleting recipient: ${error.message} (Code: ${error.code})`);
-        }
-      };
-
       // Function to escape CSV values
       const escapeCsv = (str) => {
         if (!str) return '';
@@ -525,86 +415,96 @@
       // Export CSV for a given set of orders
       const exportToCsv = (orders, title) => {
         console.log(`Exporting CSV for ${title}`);
-        const csvContent = generateCsv(orders, title);
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${title.replace(/\s+/g, '_')}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-        console.log(`Generated CSV file for ${title}`);
+        try {
+          const csvContent = generateCsv(orders, title);
+          const blob = new Blob([csvContent], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${title.replace(/\s+/g, '_')}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+          console.log(`Generated CSV file for ${title}`);
+        } catch (error) {
+          console.error('Error generating CSV:', error.message);
+          setError(`Error generating CSV: ${error.message}`);
+        }
       };
 
       // Generate PDF with jsPDF
       const exportToPDF = (orders, title) => {
         console.log(`Exporting PDF for ${title}`);
-        const doc = new jsPDF();
-        doc.setFontSize(16);
-        doc.text(title, 20, 20);
-        doc.setFontSize(12);
-        doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 30);
+        try {
+          const doc = new jsPDF();
+          doc.setFontSize(16);
+          doc.text(title, 20, 20);
+          doc.setFontSize(12);
+          doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 30);
 
-        const groupedOrders = orders.reduce((acc, order) => {
-          const setName = order.set || 'Unknown Set';
-          if (!acc[setName]) acc[setName] = [];
-          acc[setName].push(order);
-          return acc;
-        }, {});
+          const groupedOrders = orders.reduce((acc, order) => {
+            const setName = order.set || 'Unknown Set';
+            if (!acc[setName]) acc[setName] = [];
+            acc[setName].push(order);
+            return acc;
+          }, {});
 
-        let y = 40;
-        Object.keys(groupedOrders).sort().forEach(setName => {
-          doc.setFontSize(14);
-          doc.text(`Set: ${setName}`, 20, y);
-          y += 10;
+          let y = 40;
+          Object.keys(groupedOrders).sort().forEach(setName => {
+            doc.setFontSize(14);
+            doc.text(`Set: ${setName}`, 20, y);
+            y += 10;
 
-          const tableData = groupedOrders[setName]
-            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-            .map(order => {
-              const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
-              const dates = order.deliveryMethod === 'pickup' ? order.deliveryDate || '' : `${order.startDate || ''} to ${order.endDate || ''}`;
-              const receivedAt = order.receivedAt ? new Date(order.receivedAt).toLocaleString() : '';
-              return [
-                order.itemName,
-                order.pickupFrom,
-                order.orderNumber,
-                order.deliveryMethod,
-                dates,
-                order.recipient,
-                status,
-                receivedAt,
-                order.imageUrl || ''
-              ];
+            const tableData = groupedOrders[setName]
+              .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+              .map(order => {
+                const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
+                const dates = order.deliveryMethod === 'pickup' ? order.deliveryDate || '' : `${order.startDate || ''} to ${order.endDate || ''}`;
+                const receivedAt = order.receivedAt ? new Date(order.receivedAt).toLocaleString() : '';
+                return [
+                  order.itemName || '',
+                  order.pickupFrom || '',
+                  order.orderNumber || '',
+                  order.deliveryMethod || '',
+                  dates,
+                  order.recipient || '',
+                  status,
+                  receivedAt,
+                  order.imageUrl || ''
+                ];
+              });
+
+            doc.autoTable({
+              startY: y,
+              head: [['Item Name', 'Pickup From', 'Order Number', 'Delivery', 'Dates', 'Recipient', 'Status', 'Received At', 'Image URL']],
+              body: tableData,
+              theme: 'grid',
+              styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+              columnStyles: {
+                0: { cellWidth: 25 },
+                1: { cellWidth: 20 },
+                2: { cellWidth: 20 },
+                3: { cellWidth: 15 },
+                4: { cellWidth: 25 },
+                5: { cellWidth: 20 },
+                6: { cellWidth: 20 },
+                7: { cellWidth: 20 },
+                8: { cellWidth: 25 }
+              }
             });
 
-          doc.autoTable({
-            startY: y,
-            head: [['Item Name', 'Pickup From', 'Order Number', 'Delivery', 'Dates', 'Recipient', 'Status', 'Received At', 'Image URL']],
-            body: tableData,
-            theme: 'grid',
-            styles: { fontSize: 8, cellPadding: 2 },
-            columnStyles: {
-              0: { cellWidth: 25 },
-              1: { cellWidth: 20 },
-              2: { cellWidth: 20 },
-              3: { cellWidth: 15 },
-              4: { cellWidth: 25 },
-              5: { cellWidth: 20 },
-              6: { cellWidth: 20 },
-              7: { cellWidth: 20 },
-              8: { cellWidth: 25 }
+            y = doc.lastAutoTable.finalY + 10;
+            if (y > 270) {
+              doc.addPage();
+              y = 20;
             }
           });
 
-          y = doc.lastAutoTable.finalY + 10;
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-        });
-
-        doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
-        console.log(`Generated PDF file for ${title}`);
+          doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
+          console.log(`Generated PDF file for ${title}`);
+        } catch (error) {
+          console.error('Error generating PDF:', error.message);
+          setError(`Error generating PDF: ${error.message}`);
+        }
       };
 
       // Open modal with order details

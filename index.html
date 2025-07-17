@@ -23,6 +23,12 @@
             text-align: center;
             margin-bottom: 20px;
         }
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
         .tabs {
             display: flex;
             justify-content: space-around;
@@ -45,16 +51,21 @@
             background-color: #007aff;
             color: #ffffff;
         }
-        .form, .order-list {
+        .form, .order-list, .settings-section {
             background-color: #ffffff;
             border-radius: 12px;
             padding: 20px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
+        .input-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
         input {
-            width: 100%;
+            flex: 1;
             padding: 10px;
-            margin: 10px 0;
+            margin-right: 10px;
             border: 1px solid #d2d2d7;
             border-radius: 8px;
             font-size: 16px;
@@ -67,30 +78,45 @@
             border-radius: 8px;
             font-size: 16px;
             cursor: pointer;
-            width: 100%;
-            margin: 10px 0;
             transition: background-color 0.3s;
         }
         button:hover {
             background-color: #0056b3;
+        }
+        .add-button {
+            width: auto;
+            padding: 10px 20px;
         }
         ul {
             list-style: none;
             padding: 0;
         }
         li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             background-color: #f9f9f9;
             border-radius: 8px;
             padding: 15px;
             margin: 10px 0;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
+        .delete-button {
+            background-color: #ff3b30;
+            padding: 8px 16px;
+            margin-left: 10px;
+        }
+        .delete-button:hover {
+            background-color: #d9362b;
+        }
         .status-button {
             background-color: #34c759;
             margin-top: 10px;
+            width: 100%;
         }
         .archive-button {
             background-color: #ff9500;
+            width: 100%;
         }
         .error {
             color: #ff3b30;
@@ -123,6 +149,10 @@
             const [user, setUser] = useState(null);
             const [tab, setTab] = useState('Incoming');
             const [orders, setOrders] = useState([]);
+            const [sets, setSets] = useState([]);
+            const [receivers, setReceivers] = useState([]);
+            const [newSetName, setNewSetName] = useState('');
+            const [newReceiverName, setNewReceiverName] = useState('');
             const [item, setItem] = useState('');
             const [quantity, setQuantity] = useState(1);
             const [recipient, setRecipient] = useState('');
@@ -169,11 +199,26 @@
 
             useEffect(() => {
                 if (user) {
-                    const unsubscribe = db.collection('orders').onSnapshot(snapshot => {
+                    const unsubscribeOrders = db.collection('orders').where('orderedBy', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         setOrders(data);
                     });
-                    return unsubscribe;
+
+                    const unsubscribeSets = db.collection('sets').where('userId', '==', user.uid).onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setSets(data);
+                    });
+
+                    const unsubscribeReceivers = db.collection('receivers').where('userId', '==', user.uid).onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setReceivers(data);
+                    });
+
+                    return () => {
+                        unsubscribeOrders();
+                        unsubscribeSets();
+                        unsubscribeReceivers();
+                    };
                 }
             }, [user]);
 
@@ -193,6 +238,34 @@
 
             const updateStatus = (id, newStatus) => {
                 db.collection('orders').doc(id).update({ status: newStatus });
+            };
+
+            const addSet = () => {
+                if (newSetName.trim()) {
+                    db.collection('sets').add({
+                        name: newSetName,
+                        userId: user.uid
+                    });
+                    setNewSetName('');
+                }
+            };
+
+            const deleteSet = (id) => {
+                db.collection('sets').doc(id).delete();
+            };
+
+            const addReceiver = () => {
+                if (newReceiverName.trim()) {
+                    db.collection('receivers').add({
+                        name: newReceiverName,
+                        userId: user.uid
+                    });
+                    setNewReceiverName('');
+                }
+            };
+
+            const deleteReceiver = (id) => {
+                db.collection('receivers').doc(id).delete();
             };
 
             const filteredOrders = orders.filter(order => {
@@ -232,9 +305,34 @@
                             <button onClick={handleOrder}>Place Order</button>
                         </div>
                     ) : tab === 'Settings' ? (
-                        <div className="form">
-                            {/* Optional: Add any settings here if needed */}
-                            <p>Anonymous session active.</p>
+                        <div className="settings-section">
+                            <h2>Set Names</h2>
+                            <div className="input-group">
+                                <input value={newSetName} onChange={e => setNewSetName(e.target.value)} placeholder="New Set Name" />
+                                <button className="add-button" onClick={addSet}>Add</button>
+                            </div>
+                            <ul>
+                                {sets.map(s => (
+                                    <li key={s.id}>
+                                        {s.name}
+                                        <button className="delete-button" onClick={() => deleteSet(s.id)}>Delete</button>
+                                    </li>
+                                ))}
+                            </ul>
+
+                            <h2>Receiver Names</h2>
+                            <div className="input-group">
+                                <input value={newReceiverName} onChange={e => setNewReceiverName(e.target.value)} placeholder="New Receiver Name" />
+                                <button className="add-button" onClick={addReceiver}>Add</button>
+                            </div>
+                            <ul>
+                                {receivers.map(r => (
+                                    <li key={r.id}>
+                                        {r.name}
+                                        <button className="delete-button" onClick={() => deleteReceiver(r.id)}>Delete</button>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     ) : (
                         <ul className="order-list">

@@ -243,6 +243,9 @@
     <!-- jsPDF CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
+    <!-- EmailJS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
     <!-- Firebase Compat CDNs for namespaced API -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
@@ -278,7 +281,10 @@
             const [filterItem, setFilterItem] = useState('');
             const [filterDescription, setFilterDescription] = useState('');
 
-            const buyerEmail = 'Blaineelliott478@hotmail.com'; // Updated buyer's email
+            const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
+            const emailjsServiceId = 'YOUR_EMAILJS_SERVICE_ID'; // Replace with your EmailJS service ID
+            const emailjsTemplateId = 'YOUR_EMAILJS_TEMPLATE_ID'; // Replace with your EmailJS template ID
+            const emailjsUserId = 'YOUR_EMAILJS_USER_ID'; // Replace with your EmailJS user ID
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -297,6 +303,7 @@
             const db = firebase.firestore();
 
             useEffect(() => {
+                emailjs.init(emailjsUserId); // Initialize EmailJS
                 const handleAuth = () => {
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
@@ -358,7 +365,7 @@
                 setItems(newItems);
             };
 
-            const generatePDF = (orderData) => {
+            const generatePDFBase64 = (orderData) => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 doc.text('Hardware Order Details', 10, 10);
@@ -376,13 +383,7 @@
                     doc.text(`- ${it.item} (Set: ${it.set})`, 10, 80 + (idx * 10));
                 });
                 doc.text(`Description: ${orderData.description}`, 10, 80 + (orderData.items.length * 10));
-                const pdfBlob = doc.output('blob');
-                const pdfUrl = URL.createObjectURL(pdfBlob);
-                const a = document.createElement('a');
-                a.href = pdfUrl;
-                a.download = `order_${orderData.orderNumber}.pdf`;
-                a.click();
-                URL.revokeObjectURL(pdfUrl);
+                return doc.output('datauristring').split(',')[1]; // Base64 string
             };
 
             const handleOrder = async () => {
@@ -405,12 +406,15 @@
                         orderData.deliveryEndDate = deliveryEndDate;
                     }
                     const docRef = await db.collection('orders').add(orderData);
-                    // Generate and download PDF
-                    generatePDF(orderData);
-                    // Email
-                    const subject = encodeURIComponent(`Order from ${store}: ${items.map(it => it.item).join(', ')}`);
-                    const body = encodeURIComponent(`Please attach the downloaded PDF for the full order details.\n\nSummary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}`);
-                    window.location.href = `mailto:${buyerEmail}?subject=${subject}&body=${body}`;
+                    // Generate PDF base64
+                    const pdfBase64 = generatePDFBase64(orderData);
+                    // Send email with EmailJS
+                    await emailjs.send(emailjsServiceId, emailjsTemplateId, {
+                        subject: `Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`,
+                        body: `Summary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}`,
+                        attachment: pdfBase64,
+                        filename: `order_${orderNumber}.pdf`
+                    });
                     // Reset form
                     setItems([{ item: '', set: '' }]);
                     setDescription('');

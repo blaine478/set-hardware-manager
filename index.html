@@ -325,7 +325,7 @@
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
                         .catch(err => {
-                            setError(err.toString());
+                            setError(err.message);
                             setLoading(false);
                         });
                 };

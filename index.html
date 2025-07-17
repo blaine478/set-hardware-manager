@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hardware Tracking</title>
-  <script id="react" src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-  <script id="react-dom" src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script id="babel" src="https://cdn.jsdelivr.net/npm/babel-standalone@7.22.9/babel.min.js"></script>
+  <script id="react" src="https://cdn.jsdelivr.net/npm/react@17.0.2/umd/react.production.min.js" defer></script>
+  <script id="react-dom" src="https://cdn.jsdelivr.net/npm/react-dom@17.0.2/umd/react-dom.production.min.js" defer></script>
+  <script id="babel" src="https://cdn.jsdelivr.net/npm/babel-standalone@7.20.0/babel.min.js" defer></script>
   <script id="firebase-app" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script id="firebase-firestore" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <style>
@@ -64,7 +64,7 @@
       padding: 8px 16px; 
       border-radius: 8px; 
       font-size: 14px; 
-      font-weight: medium; 
+      font-weight: 500; 
       color: #4a4a4a; 
       cursor: pointer; 
       transition: background-color 0.3s, color 0.3s; 
@@ -83,8 +83,8 @@
       animation: fadeIn 0.3s ease-in; 
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .error { color: #ff3b30; text-align: center; }
-    .loading { color: #007aff; text-align: center; }
+    .error { color: #ff3b30; text-align: center; font-size: 16px; }
+    .loading { color: #007aff; text-align: center; font-size: 16px; }
   </style>
 </head>
 <body>
@@ -148,6 +148,7 @@
         document.getElementById('error').innerText = 
           (window.appStatus.react.error || '') + ' ' + 
           (window.appStatus.firebase.error || '');
+        renderFallbackUI();
       } else {
         document.getElementById('error').innerText = "Loading dependencies...";
       }
@@ -184,19 +185,63 @@
     }
 
     reactScript.onload = checkReactLoaded;
+    reactScript.onerror = () => {
+      window.appStatus.react = { loaded: false, error: "Failed to load React script." };
+      checkAllLoaded();
+    };
     reactDomScript.onload = checkReactLoaded;
+    reactDomScript.onerror = () => {
+      window.appStatus.react = { loaded: false, error: "Failed to load ReactDOM script." };
+      checkAllLoaded();
+    };
     babelScript.onload = checkReactLoaded;
+    babelScript.onerror = () => {
+      window.appStatus.react = { loaded: false, error: "Failed to load Babel script." };
+      checkAllLoaded();
+    };
     firebaseAppScript.onload = checkFirebaseLoaded;
+    firebaseAppScript.onerror = () => {
+      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase App script." };
+      checkAllLoaded();
+    };
     firebaseFirestoreScript.onload = checkFirebaseLoaded;
+    firebaseFirestoreScript.onerror = () => {
+      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase Firestore script." };
+      checkAllLoaded();
+    };
 
-    // Fallback if scripts fail to load
+    // Fallback UI
+    function renderFallbackUI() {
+      document.getElementById('root').innerHTML = `
+        <div class="header">
+          <div class="header-content">
+            <h1>Hardware Tracking</h1>
+            <button onclick="document.documentElement.className = document.documentElement.className === 'dark' ? '' : 'dark'">Toggle Dark Mode</button>
+          </div>
+          <nav class="nav">
+            <div class="tabs">
+              <button class="tab tab-active">Incoming</button>
+              <button class="tab">Received</button>
+              <button class="tab">Archived</button>
+              <button class="tab">Options</button>
+            </div>
+          </nav>
+        </div>
+        <div class="content">
+          <p>React failed to load. Displaying static UI.</p>
+        </div>
+      `;
+    }
+
+    // Timeout for script loading
     setTimeout(() => {
       if (!window.appStatus.react.loaded || !window.appStatus.firebase.loaded) {
         document.getElementById('error').innerText = 
           (window.appStatus.react.error || 'React not loaded') + ' ' + 
           (window.appStatus.firebase.error || 'Firebase not loaded');
+        renderFallbackUI();
       }
-    }, 10000); // 10 seconds timeout
+    }, 10000); // 10 seconds
   </script>
   <script type="text/babel">
     const { useState, useEffect } = React;
@@ -212,7 +257,7 @@
 
       return (
         <div>
-          <header className="header">
+          <div className="header">
             <div className="header-content">
               <h1>Hardware Tracking</h1>
               <button
@@ -224,18 +269,33 @@
             </div>
             <nav className="nav">
               <div className="tabs">
-                {['incoming', 'received', 'archived', 'options'].map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setPage(tab)}
-                    className={`tab ${page === tab ? 'tab-active' : ''}`}
-                  >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setPage('incoming')}
+                  className={page === 'incoming' ? 'tab tab-active' : 'tab'}
+                >
+                  Incoming
+                </button>
+                <button
+                  onClick={() => setPage('received')}
+                  className={page === 'received' ? 'tab tab-active' : 'tab'}
+                >
+                  Received
+                </button>
+                <button
+                  onClick={() => setPage('archived')}
+                  className={page === 'archived' ? 'tab tab-active' : 'tab'}
+                >
+                  Archived
+                </button>
+                <button
+                  onClick={() => setPage('options')}
+                  className={page === 'options' ? 'tab tab-active' : 'tab'}
+                >
+                  Options
+                </button>
               </div>
             </nav>
-          </header>
+          </div>
           <div className="content">
             {window.appStatus.firebase.loaded ? (
               <>
@@ -256,39 +316,12 @@
     function renderApp() {
       try {
         ReactDOM.render(<App />, document.getElementById('root'));
+        document.getElementById('error').innerText = '';
       } catch (error) {
         console.error("React rendering failed:", error);
         document.getElementById('error').innerText = "Failed to render app: " + error.message;
+        renderFallbackUI();
       }
-    }
-  </script>
-  <!-- Fallback Non-React Version -->
-  <script type="text/javascript">
-    if (!window.appStatus.react.loaded) {
-      setTimeout(() => {
-        if (!window.appStatus.react.loaded) {
-          document.getElementById('root').innerHTML = `
-            <div class="header">
-              <div class="header-content">
-                <h1>Hardware Tracking</h1>
-                <button onclick="document.documentElement.className = document.documentElement.className === 'dark' ? '' : 'dark'">Toggle Dark Mode</button>
-              </div>
-              <nav class="nav">
-                <div class="tabs">
-                  <button class="tab tab-active">Incoming</button>
-                  <button class="tab">Received</button>
-                  <button class="tab">Archived</button>
-                  <button class="tab">Options</button>
-                </div>
-              </nav>
-            </div>
-            <div class="content">
-              <p>React failed to load. Displaying static UI.</p>
-            </div>
-          `;
-          document.getElementById('error').innerText = "React failed to load. Using fallback UI.";
-        }
-      }, 5000);
     }
   </script>
 </body>

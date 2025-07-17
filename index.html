@@ -158,18 +158,29 @@
           appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
         };
         firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
         window.firebase = {
-          db: firebase.firestore(),
+          db: db,
           collection: firebase.firestore.collection,
           addDoc: (collectionRef, data) => collectionRef.add(data),
           getDocs: (collectionRef) => collectionRef.get(),
           updateDoc: (docRef, data) => docRef.update(data),
           doc: firebase.firestore.doc
         };
-        window.appStatus.firebase = { loaded: true, error: null };
-        console.log("Firebase initialized successfully");
-        errorDiv.innerText = '';
-        renderUI();
+        // Test Firestore connectivity
+        db.collection('test').doc('test').set({ timestamp: new Date().toISOString() })
+          .then(() => {
+            console.log("Firestore test write successful");
+            window.appStatus.firebase = { loaded: true, error: null };
+            errorDiv.innerText = '';
+            renderUI();
+          })
+          .catch(error => {
+            console.error("Firestore test write failed:", error);
+            window.appStatus.firebase = { loaded: false, error: "Firestore test failed: " + error.message };
+            errorDiv.innerText = window.appStatus.firebase.error;
+            renderUI();
+          });
       } catch (error) {
         console.error("Firebase initialization failed:", error);
         window.appStatus.firebase = { loaded: false, error: "Firebase initialization failed: " + error.message };
@@ -223,7 +234,8 @@
     // Tab Switching
     function setTab(tab) {
       currentTab = tab;
-      document.getElementById('form-message').innerText = '';
+      const messageDiv = document.getElementById('form-message');
+      if (messageDiv) messageDiv.innerText = '';
       renderUI();
     }
 
@@ -257,6 +269,7 @@
 
       window.firebase.db.collection('items').doc(newItem.id).set(newItem)
         .then(() => {
+          console.log("Order added successfully:", newItem);
           messageDiv.innerText = 'Order added successfully!';
           messageDiv.className = 'success';
           descriptionInput.value = '';

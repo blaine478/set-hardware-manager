@@ -161,10 +161,10 @@
         }
         .delete-button {
             background-color: #ff3b30;
-            padding: 6px 12px;
+            padding: 4px 8px;
             margin-left: 10px;
-            font-size: 14px;
-            border-radius: 6px;
+            font-size: 12px;
+            border-radius: 4px;
         }
         .delete-button:hover {
             background-color: #d9362b;
@@ -370,7 +370,7 @@
 
             const archiveOrdersWithSet = async (setName) => {
                 const ordersToArchive = orders.filter(order => 
-                    order.items.some(item => item.set === setName)
+                    order.items && Array.isArray(order.items) && order.items.some(item => item.set === setName)
                 );
                 for (const order of ordersToArchive) {
                     await updateStatus(order.id, 'archived');

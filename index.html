@@ -82,6 +82,46 @@
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     .error { color: #ff3b30; text-align: center; font-size: 16px; }
     .loading { color: #007aff; text-align: center; font-size: 16px; }
+    .form-container { 
+      background-color: #ffffff; 
+      padding: 24px; 
+      border-radius: 12px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+      max-width: 600px; 
+      margin: 0 auto; 
+    }
+    .dark .form-container { 
+      background-color: #2d2d2d; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3); 
+    }
+    .form-container input { 
+      width: 100%; 
+      padding: 10px; 
+      margin-bottom: 16px; 
+      border: 1px solid #d1d1d1; 
+      border-radius: 8px; 
+      font-size: 14px; 
+    }
+    .dark .form-container input { 
+      background-color: #4a4a4a; 
+      color: #ffffff; 
+      border-color: #6b6b6b; 
+    }
+    .form-container button { 
+      background-color: #007aff; 
+      color: #ffffff; 
+      padding: 10px 20px; 
+      border: none; 
+      border-radius: 8px; 
+      font-size: 14px; 
+      cursor: pointer; 
+      width: 100%; 
+    }
+    .form-container button:disabled { 
+      background-color: #cccccc; 
+      cursor: not-allowed; 
+    }
+    .success { color: #34c759; text-align: center; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -166,7 +206,15 @@
             ${currentTab === 'incoming' ? '<p>Incoming items will be displayed here.</p>' : ''}
             ${currentTab === 'received' ? '<p>Received items will be displayed here.</p>' : ''}
             ${currentTab === 'archived' ? '<p>Archived sets will be displayed here.</p>' : ''}
-            ${currentTab === 'options' ? '<p>Order form and buyer options will be displayed here.</p>' : ''}
+            ${currentTab === 'options' ? `
+              <div class="form-container">
+                <h2 style="font-size: 18px; font-weight: 500; margin-bottom: 16px; color: ${document.documentElement.className === 'dark' ? '#ffffff' : '#1a1a1a'};">Add New Order</h2>
+                <input type="text" id="description" placeholder="Description (e.g., LED Panel)" ${window.appStatus.firebase.error ? 'disabled' : ''}>
+                <input type="text" id="receiver" placeholder="Receiver's Name" ${window.appStatus.firebase.error ? 'disabled' : ''}>
+                <button onclick="addOrder()" ${window.appStatus.firebase.error ? 'disabled' : ''}>Add Order</button>
+                <p id="form-message" class="success"></p>
+              </div>
+            ` : ''}
           ` : `<p class="error">${window.appStatus.firebase.error || 'Loading Firebase...'}</p>`}
         </div>
       `;
@@ -175,7 +223,50 @@
     // Tab Switching
     function setTab(tab) {
       currentTab = tab;
+      document.getElementById('form-message').innerText = '';
       renderUI();
+    }
+
+    // Add Order
+    function addOrder() {
+      const descriptionInput = document.getElementById('description');
+      const receiverInput = document.getElementById('receiver');
+      const messageDiv = document.getElementById('form-message');
+      const description = descriptionInput.value.trim();
+      const receiver = receiverInput.value.trim();
+
+      if (!description || !receiver) {
+        messageDiv.innerText = 'Please enter both description and receiver\'s name.';
+        messageDiv.className = 'error';
+        return;
+      }
+
+      if (window.appStatus.firebase.error) {
+        messageDiv.innerText = window.appStatus.firebase.error;
+        messageDiv.className = 'error';
+        return;
+      }
+
+      const newItem = {
+        id: 'H' + Math.floor(1000 + Math.random() * 9000),
+        description,
+        receiver,
+        status: 'Incoming',
+        timestamp: new Date().toLocaleString()
+      };
+
+      window.firebase.db.collection('items').doc(newItem.id).set(newItem)
+        .then(() => {
+          messageDiv.innerText = 'Order added successfully!';
+          messageDiv.className = 'success';
+          descriptionInput.value = '';
+          receiverInput.value = '';
+        })
+        .catch(error => {
+          console.error("Error adding order:", error);
+          messageDiv.innerText = 'Failed to add order: ' + error.message;
+          messageDiv.className = 'error';
+        });
     }
 
     // Script Load Handlers

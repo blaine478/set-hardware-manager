@@ -37,45 +37,9 @@
       db = firebase.getFirestore(app);
       storage = firebase.getStorage(app);
       firebaseInitialized = true;
-      console.log('Firebase initialized successfully');
     } catch (error) {
       console.error('Firebase initialization error:', error.message);
     }
-    const registerServiceWorker = async () => {
-      if ('serviceWorker' in navigator) {
-        try {
-          const registration = await navigator.serviceWorker.register('/sw.js');
-          console.log('Service worker registered:', registration);
-          return registration;
-        } catch (error) {
-          console.error('Service worker registration failed:', error.message);
-          alert('Failed to register service worker for notifications: ' + error.message);
-        }
-      } else {
-        console.log('Service workers not supported in this browser');
-        alert('Push notifications are not supported in this browser.');
-      }
-      return null;
-    };
-    const requestNotificationPermission = async () => {
-      if (!("Notification" in window) && !('serviceWorker' in navigator)) {
-        console.log("Notifications and service workers not supported in this browser");
-        alert("Notifications are not supported in this browser.");
-        return false;
-      }
-      try {
-        const permission = await Notification.requestPermission();
-        console.log('Notification permission:', permission);
-        if (permission !== 'granted') {
-          alert('Notification permission denied. You will not receive push notifications.');
-        }
-        return permission === 'granted';
-      } catch (error) {
-        console.error('Error requesting notification permission:', error.message);
-        alert('Error requesting notification permission: ' + error.message);
-        return false;
-      }
-    };
     function ErrorBoundary({ children }) {
       const [hasError, setHasError] = useState(false);
       const [errorMessage, setErrorMessage] = useState('');
@@ -128,22 +92,12 @@
       const [pickedUpBy, setPickedUpBy] = useState('');
       const [editOrder, setEditOrder] = useState(null);
       const [recipientFilter, setRecipientFilter] = useState('');
-      const [serviceWorkerRegistration, setServiceWorkerRegistration] = useState(null);
-      useEffect(() => {
-        const initializeNotifications = async () => {
-          const registration = await registerServiceWorker();
-          setServiceWorkerRegistration(registration);
-          await requestNotificationPermission();
-        };
-        initializeNotifications();
-      }, []);
       useEffect(() => {
         if (!firebaseInitialized || !db) {
           console.error('Firestore database not initialized');
           setError('Firestore database not initialized. Please check Firebase configuration.');
           return;
         }
-        console.log('Setting up Firestore listeners...');
         const unsubscribeOrders = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
           const ordersData = snapshot.docs.map(doc => {
             const data = doc.data();
@@ -287,23 +241,6 @@
           console.log('Selected image:', file.name, 'Size:', file.size);
         }
       };
-      const sendNotification = async (title, body) => {
-        if (serviceWorkerRegistration && Notification.permission === 'granted') {
-          try {
-            await serviceWorkerRegistration.showNotification(title, {
-              body,
-              icon: '/icon.png'
-            });
-            console.log('Notification sent via service worker:', title);
-          } catch (error) {
-            console.error('Error sending notification via service worker:', error.message);
-            alert(`${title}: ${body} (Failed to send notification: ${error.message})`);
-          }
-        } else {
-          console.log('Notifications not permitted or service worker not registered, using alert');
-          alert(`${title}: ${body}`);
-        }
-      };
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (!firebaseInitialized || !db || !storage) {
@@ -336,7 +273,6 @@
           console.log('Submitting order to Firestore:', orderData);
           const docRef = await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
           console.log('Order saved successfully with ID:', docRef.id);
-          await sendNotification('New Order Created', `Order "${orderData.items[0].itemName || 'Unknown'}" has been created for set "${orderData.items[0].set || 'Unknown'}".`);
           setFormData({
             items: [{ itemName: '', set: '', recipient: '' }],
             pickupFrom: '',
@@ -389,9 +325,8 @@
             receivedAt
           });
           console.log('Order marked as received successfully with timestamp:', receivedAt.toDate());
-          const order = orders.find(o => o.id === receivedOrderId) || {};
-          await sendNotification('Order Received', `Order "${order.items && order.items[0] ? order.items[0].itemName : 'Unknown'}" was received by ${pickedUpBy} for set "${order.items && order.items[0] ? order.items[0].set : 'Unknown'}".`);
           closeReceivedModal();
+          alert('Order marked as received!');
         } catch (error) {
           console.error('Error marking order as received:', error.message, error.code);
           setError(`Error marking order as received: ${error.message} (Code: ${error.code})`);

@@ -3,477 +3,455 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Set Hardware Tracker</title>
-  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.6/babel.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <title>Hardware Tracking App</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/babel-standalone@7.22.9/babel.min.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script id="firebase-app" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script id="firebase-firestore" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+  <style>
+    .fade-in { animation: fadeIn 0.5s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .hover-scale { transition: transform 0.3s; }
+    .hover-scale:hover { transform: scale(1.05); }
+  </style>
 </head>
-<body>
-  <div id="root"></div>
-  <script type="text/babel">
-    // Debug logging to diagnose blank screen
-    console.log('Starting Set Hardware Tracker...');
-    console.log('React:', typeof React !== 'undefined' ? 'Loaded' : 'Not loaded');
-    console.log('ReactDOM:', typeof ReactDOM !== 'undefined' ? 'Loaded' : 'Not loaded');
-    console.log('Firebase:', typeof firebase !== 'undefined' ? 'Loaded' : 'Not loaded');
-    console.log('jsPDF:', typeof window.jspdf !== 'undefined' ? 'Loaded' : 'Not loaded');
-
-    // Wait for all dependencies to load
-    function initializeAppWhenReady() {
-      if (
-        typeof React === 'undefined' ||
-        typeof ReactDOM === 'undefined' ||
-        typeof firebase === 'undefined' ||
-        typeof window.jspdf === 'undefined'
-      ) {
-        console.log('Dependencies not ready, retrying in 100ms...');
-        setTimeout(initializeAppWhenReady, 100);
+<body class="bg-gray-100 dark:bg-gray-900 transition-colors duration-300">
+  <div id="root" class="min-h-screen"></div>
+  <script type="text/javascript">
+    // Firebase Initialization with Robust Retry
+    function initializeFirebase(attempts = 0, maxAttempts = 50) {
+      if (typeof firebase === 'undefined') {
+        if (attempts >= maxAttempts) {
+          console.error("Firebase failed to load after", maxAttempts, "attempts. Check CDN or network.");
+          window.firebase = { error: "Firebase not available. Please check your connection." };
+          return;
+        }
+        console.warn("Firebase not loaded yet. Retrying in 100ms... (Attempt", attempts + 1, ")");
+        setTimeout(() => initializeFirebase(attempts + 1, maxAttempts), 100);
         return;
       }
-
-      console.log('All dependencies loaded, initializing app...');
-
-      const { useState, useEffect, useCallback } = React;
-      const { initializeApp } = firebase;
-      const { getFirestore, collection, addDoc, updateDoc, doc, onSnapshot } = firebase.firestore;
-      const { getAuth, onAuthStateChanged, signInAnonymously } = firebase.auth;
-      const { jsPDF } = window.jspdf;
-
-      const firebaseConfig = {
-        apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
-        authDomain: "set-hardware.firebaseapp.com",
-        projectId: "set-hardware",
-        storageBucket: "set-hardware.firebasestorage.app",
-        messagingSenderId: "613195230835",
-        appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
-      };
-
-      let app, db, auth;
       try {
-        console.log('Initializing Firebase...');
-        app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
-        console.log('Firebase initialized successfully');
-      } catch (err) {
-        console.error('Firebase initialization failed:', err);
-        document.getElementById('root').innerHTML = '<div class="text-red-700 p-4 text-center">Failed to initialize application. Please check your network and refresh.</div>';
-        return;
-      }
-
-      function ErrorBoundary({ children }) {
-        const [error, setError] = useState(null);
-        if (error) {
-          console.log('ErrorBoundary caught error:', error);
-          return (
-            <div className="p-4 bg-red-100 text-red-700 rounded-lg text-center">
-              <p>An error occurred: {error.message}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="mt-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-              >
-                Reload App
-              </button>
-            </div>
-          );
-        }
-        return children;
-      }
-
-      function App() {
-        const [orders, setOrders] = useState([]);
-        const [newOrder, setNewOrder] = useState({ setNumber: '', items: [{ name: '', for: '', deliveryDate: '' }], pickupPerson: '', pickupTime: '' });
-        const [showArchived, setShowArchived] = useState(false);
-        const [expandedOrder, setExpandedOrder] = useState(null);
-        const [error, setError] = useState(null);
-        const [searchTerm, setSearchTerm] = useState('');
-        const [setNumbers, setSetNumbers] = useState([]);
-        const [recipients, setRecipients] = useState([]);
-        const [user, setUser] = useState(null);
-        const [loading, setLoading] = useState(true);
-
-        useEffect(() => {
-          console.log('Setting up auth listener...');
-          const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-            console.log('Auth state changed:', currentUser ? 'User authenticated' : 'No user');
-            if (currentUser) {
-              setUser(currentUser);
-              setLoading(false);
-            } else {
-              console.log('Attempting anonymous sign-in...');
-              signInAnonymously(auth).catch(err => {
-                setError('Authentication failed. Please try again.');
-                console.error('Anonymous auth failed:', err);
-              });
-            }
-          });
-          return () => {
-            console.log('Cleaning up auth listener...');
-            unsubscribeAuth();
-          };
-        }, []);
-
-        const fetchOrders = useCallback(() => {
-          console.log('Fetching orders...');
-          const unsubscribe = onSnapshot(collection(db, 'orders'), (snapshot) => {
-            try {
-              const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              setOrders(ordersData);
-              const uniqueSetNumbers = [...new Set(ordersData.map(order => order.setNumber))];
-              const uniqueRecipients = [...new Set(ordersData.flatMap(order => order.items.map(item => item.for)))];
-              setSetNumbers(uniqueSetNumbers);
-              setRecipients(uniqueRecipients);
-              setError(null);
-              console.log('Orders fetched:', ordersData.length);
-            } catch (err) {
-              setError('Failed to fetch orders. Please try again.');
-              console.error('Fetch orders error:', err);
-            }
-          }, (err) => {
-            setError('Failed to listen for orders. Please try again.');
-            console.error('Snapshot listener error:', err);
-          });
-          return unsubscribe;
-        }, []);
-
-        useEffect(() => {
-          if (user) {
-            console.log('User authenticated, starting order fetch...');
-            const unsubscribe = fetchOrders();
-            return () => {
-              console.log('Cleaning up order listener...');
-              unsubscribe();
-            };
-          }
-        }, [user, fetchOrders]);
-
-        const addOrder = async () => {
-          if (!newOrder.setNumber || !newOrder.items.every(item => item.name && item.for && item.deliveryDate)) {
-            setError('Please fill in all item details.');
-            console.log('Invalid order data:', newOrder);
-            return;
-          }
-          try {
-            console.log('Adding order:', newOrder);
-            await addDoc(collection(db, 'orders'), { ...newOrder, archived: false, createdAt: new Date().toISOString() });
-            setNewOrder({ setNumber: '', items: [{ name: '', for: '', deliveryDate: '' }], pickupPerson: '', pickupTime: '' });
-            setError(null);
-            console.log('Order added successfully');
-          } catch (err) {
-            setError('Failed to add order. Please try again.');
-            console.error('Add order error:', err);
-          }
+        const firebaseConfig = {
+          apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
+          authDomain: "set-hardware.firebaseapp.com",
+          projectId: "set-hardware",
+          storageBucket: "set-hardware.firebasestorage.app",
+          messagingSenderId: "613195230835",
+          appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
         };
-
-        const markPickedUp = async (orderId, pickupPerson) => {
-          if (!pickupPerson) {
-            setError('Please enter a pickup person.');
-            console.log('No pickup person provided for order:', orderId);
-            return;
-          }
-          try {
-            console.log('Marking order as picked up:', orderId, pickupPerson);
-            const orderRef = doc(db, 'orders', orderId);
-            await updateDoc(orderRef, { pickupPerson, pickupTime: new Date().toISOString() });
-            setError(null);
-            console.log(`Notification: Order ${orderId} picked up by ${pickupPerson}`);
-          } catch (err) {
-            setError('Failed to mark as picked up. Please try again.');
-            console.error('Mark pickup error:', err);
-          }
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        window.firebase = {
+          db,
+          collection: firebase.firestore.collection,
+          addDoc: (collectionRef, data) => collectionRef.add(data),
+          getDocs: (collectionRef) => collectionRef.get(),
+          updateDoc: (docRef, data) => docRef.update(data),
+          doc: firebase.firestore.doc
         };
-
-        const toggleArchive = async (orderId, archived) => {
-          try {
-            console.log('Toggling archive for order:', orderId, archived);
-            const orderRef = doc(db, 'orders', orderId);
-            await updateDoc(orderRef, { archived });
-            setError(null);
-            console.log('Archive status updated');
-          } catch (err) {
-            setError('Failed to update archive status. Please try again.');
-            console.error('Toggle archive error:', err);
-          }
-        };
-
-        const generatePDF = (order) => {
-          try {
-            console.log('Generating PDF for order:', order.setNumber);
-            const doc = new jsPDF();
-            doc.setFont("helvetica", "bold");
-            doc.text("Set Hardware Order", 105, 20, { align: "center" });
-            doc.setFont("helvetica", "normal");
-            doc.text(`Set Number: ${order.setNumber}`, 20, 40);
-            doc.text(`Created: ${new Date(order.createdAt).toLocaleDateString()}`, 20, 50);
-            doc.text("Items:", 20, 60);
-            order.items.forEach((item, index) => {
-              doc.text(`${index + 1}. ${item.name} for ${item.for} (Expected: ${item.deliveryDate})`, 30, 70 + index * 10);
-            });
-            if (order.pickupPerson) {
-              doc.text(`Picked Up By: ${order.pickupPerson}`, 20, 80 + order.items.length * 10);
-              doc.text(`Pickup Time: ${new Date(order.pickupTime).toLocaleString()}`, 20, 90 + order.items.length * 10);
-            }
-            doc.save(`order_${order.setNumber}_${new Date().toISOString().split('T')[0]}.pdf`);
-            setError(null);
-            console.log('PDF generated successfully');
-          } catch (err) {
-            setError('Failed to generate PDF. Please try again.');
-            console.error('Generate PDF error:', err);
-          }
-        };
-
-        const generateBatchPDF = () => {
-          try {
-            console.log('Generating batch PDF...');
-            const doc = new jsPDF();
-            let yOffset = 20;
-            const filteredOrders = orders.filter(order => 
-              (showArchived ? order.archived : !order.archived) &&
-              (order.setNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-               order.items.some(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())))
-            );
-            
-            filteredOrders.forEach((order, index) => {
-              if (index > 0) doc.addPage();
-              doc.setFont("helvetica", "bold");
-              doc.text(`Set Hardware Order - Set ${order.setNumber}`, 105, yOffset, { align: "center" });
-              doc.setFont("helvetica", "normal");
-              doc.text(`Created: ${new Date(order.createdAt).toLocaleDateString()}`, 20, yOffset + 10);
-              doc.text("Items:", 20, yOffset + 20);
-              order.items.forEach((item, itemIndex) => {
-                doc.text(`${itemIndex + 1}. ${item.name} for ${item.for} (Expected: ${item.deliveryDate})`, 30, yOffset + 30 + itemIndex * 10);
-              });
-              if (order.pickupPerson) {
-                doc.text(`Picked Up By: ${order.pickupPerson}`, 20, yOffset + 40 + order.items.length * 10);
-                doc.text(`Pickup Time: ${new Date(order.pickupTime).toLocaleString()}`, 20, yOffset + 50 + order.items.length * 10);
-              }
-              yOffset = 20;
-            });
-            doc.save(`batch_orders_${new Date().toISOString().split('T')[0]}.pdf`);
-            setError(null);
-            console.log('Batch PDF generated successfully');
-          } catch (err) {
-            setError('Failed to generate batch PDF. Please try again.');
-            console.error('Generate batch PDF error:', err);
-          }
-        };
-
-        const addItemToOrder = () => {
-          setNewOrder({ ...newOrder, items: [...newOrder.items, { name: '', for: '', deliveryDate: '' }] });
-        };
-
-        const updateItem = (index, field, value) => {
-          const updatedItems = [...newOrder.items];
-          updatedItems[index][field] = value;
-          setNewOrder({ ...newOrder, items: updatedItems });
-        };
-
-        const removeItem = (index) => {
-          if (newOrder.items.length > 1) {
-            const updatedItems = newOrder.items.filter((_, i) => i !== index);
-            setNewOrder({ ...newOrder, items: updatedItems });
-          }
-        };
-
-        const filteredOrders = orders.filter(order => 
-          (showArchived ? order.archived : !order.archived) &&
-          (order.setNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           order.items.some(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())))
-        );
-
-        if (loading) {
-          return (
-            <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-              <div className="text-gray-600 text-lg">Loading...</div>
-            </div>
-          );
-        }
-
-        return (
-          <ErrorBoundary>
-            <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4 font-sans">
-              <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl p-6">
-                <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Set Hardware Tracker</h1>
-                {error && (
-                  <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg flex justify-between items-center">
-                    <span>{error}</span>
-                    <button onClick={() => setError(null)} className="text-red-700 font-bold">✕</button>
-                  </div>
-                )}
-
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold text-gray-700 mb-2">New Order</h2>
-                  <div className="relative mb-2">
-                    <input
-                      type="text"
-                      placeholder="Set Number"
-                      value={newOrder.setNumber}
-                      onChange={(e) => setNewOrder({ ...newOrder, setNumber: e.target.value })}
-                      list="setNumbers"
-                      className="w-full p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <datalist id="setNumbers">
-                      {setNumbers.map((setNum, index) => (
-                        <option key={index} value={setNum} />
-                      ))}
-                    </datalist>
-                  </div>
-                  {newOrder.items.map((item, index) => (
-                    <div key={index} className="flex gap-2 mb-2 items-center">
-                      <input
-                        type="text"
-                        placeholder="Item Name"
-                        value={item.name}
-                        onChange={(e) => updateItem(index, 'name', e.target.value)}
-                        className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <div className="relative flex-1">
-                        <input
-                          type="text"
-                          placeholder="For (Person/Role)"
-                          value={item.for}
-                          onChange={(e) => updateItem(index, 'for', e.target.value)}
-                          list={`recipients-${index}`}
-                          className="w-full p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <datalist id={`recipients-${index}`}>
-                          {recipients.map((recipient, i) => (
-                            <option key={i} value={recipient} />
-                          ))}
-                        </datalist>
-                      </div>
-                      <input
-                        type="date"
-                        value={item.deliveryDate}
-                        onChange={(e) => updateItem(index, 'deliveryDate', e.target.value)}
-                        className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      {newOrder.items.length > 1 && (
-                        <button
-                          onClick={() => removeItem(index)}
-                          className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={addItemToOrder}
-                      className="mt-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-                    >
-                      Add Item
-                    </button>
-                    <button
-                      onClick={addOrder}
-                      className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                    >
-                      Submit Order
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mb-6 flex gap-4 items-center">
-                  <input
-                    type="text"
-                    placeholder="Search by Set Number or Item Name"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={() => setShowArchived(!showArchived)}
-                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-                  >
-                    {showArchived ? 'Active Orders' : 'Archived Orders'}
-                  </button>
-                  <button
-                    onClick={generateBatchPDF}
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-                  >
-                    Batch PDF
-                  </button>
-                </div>
-
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-700 mb-2">{showArchived ? 'Archived Orders' : 'Active Orders'}</h2>
-                  {filteredOrders.sort((a, b) => a.setNumber.localeCompare(b.setNumber)).map(order => (
-                    <div key={order.id} className="mb-4 p-4 bg-gray-50 rounded-lg shadow transition-all hover:shadow-md">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-800">Set {order.setNumber}</h3>
-                        <button
-                          onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
-                          className="px-2 py-1 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-                        >
-                          {expandedOrder === order.id ? 'Collapse' : 'Expand'}
-                        </button>
-                      </div>
-                      {expandedOrder === order.id && (
-                        <div className="mt-2">
-                          {order.items.map((item, index) => (
-                            <p key={index} className="text-gray-600">
-                              {item.name} for {item.for} (Expected: {item.deliveryDate})
-                            </p>
-                          ))}
-                          {order.pickupPerson ? (
-                            <p className="text-gray-600 mt-2">Picked up by {order.pickupPerson} at {new Date(order.pickupTime).toLocaleString()}</p>
-                          ) : (
-                            <div className="mt-2 flex gap-2">
-                              <input
-                                type="text"
-                                placeholder="Pickup Person"
-                                onBlur={(e) => markPickedUp(order.id, e.target.value)}
-                                className="p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            </div>
-                          )}
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              onClick={() => generatePDF(order)}
-                              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-                            >
-                              Generate PDF
-                            </button>
-                            <button
-                              onClick={() => toggleArchive(order.id, !order.archived)}
-                              className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
-                            >
-                              {order.archived ? 'Unarchive' : 'Archive'}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {filteredOrders.length === 0 && (
-                    <p className="text-gray-500 text-center">No orders found.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </ErrorBoundary>
-        );
-      }
-
-      try {
-        console.log('Rendering React app...');
-        ReactDOM.render(<App />, document.getElementById('root'));
-        console.log('React app rendered successfully');
-      } catch (err) {
-        console.error('Failed to render React app:', err);
-        document.getElementById('root').innerHTML = '<div class="text-red-700 p-4 text-center">Error loading application. Please check console for details and refresh.</div>';
+        console.log("Firebase initialized successfully");
+      } catch (error) {
+        console.error("Firebase initialization failed:", error);
+        window.firebase = { error: "Firebase initialization failed: " + error.message };
       }
     }
 
-    // Start initialization
-    console.log('Starting initialization...');
-    initializeAppWhenReady();
+    // Wait for Firebase scripts to load
+    const firebaseAppScript = document.getElementById('firebase-app');
+    const firebaseFirestoreScript = document.getElementById('firebase-firestore');
+    firebaseAppScript.onload = firebaseFirestoreScript.onload = () => {
+      if (firebaseAppScript.readyState === 'complete' && firebaseFirestoreScript.readyState === 'complete') {
+        initializeFirebase();
+      }
+    };
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // HomePage Component
+    const HomePage = () => {
+      const [items, setItems] = useState([]);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const fetchItems = async () => {
+          try {
+            if (window.firebase.error) throw new Error(window.firebase.error);
+            if (!window.firebase.db) throw new Error("Firebase database not initialized.");
+            const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
+            const itemsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setItems(itemsData);
+          } catch (error) {
+            console.error("Error fetching items:", error);
+            setError("Failed to load items. Please check your connection or try again.");
+          }
+        };
+        fetchItems();
+      }, []);
+
+      const markReceived = async (id, receivedBy) => {
+        try {
+          if (window.firebase.error) throw new Error(window.firebase.error);
+          const itemRef = window.firebase.db.doc(`items/${id}`);
+          await window.firebase.updateDoc(itemRef, {
+            actualDelivery: new Date().toLocaleDateString(),
+            receivedBy,
+            receiptTimestamp: new Date().toLocaleString(),
+            status: 'Active'
+          });
+          setItems(items.map(item =>
+            item.id === id ? {
+              ...item,
+              actualDelivery: new Date().toLocaleDateString(),
+              receivedBy,
+              receiptTimestamp: new Date().toLocaleString(),
+              status: 'Active'
+            } : item
+          ));
+        } catch (error) {
+          console.error("Error marking item received:", error);
+          setError("Failed to mark item as received.");
+        }
+      };
+
+      return (
+        <div className="p-6 fade-in">
+          <h2 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">Incoming Items</h2>
+          {error && <p className="text-red-500 mb-4">{error}</p>}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {items.filter(item => item.status === 'Incoming').map(item => (
+              <div key={item.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover-scale">
+                <p className="text-gray-800 dark:text-gray-200"><strong>ID:</strong> {item.id}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Description:</strong> {item.description || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Set Number:</strong> {item.setNumber || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Overseer:</strong> {item.overseer || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Expected Delivery:</strong> {item.expectedDelivery || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Destination Notes:</strong> {item.destinationNotes || 'N/A'}</p>
+                <input
+                  type="text"
+                  placeholder="Your Name"
+                  className="border p-3 mt-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+                  onChange={(e) => {
+                    if (e.target.value) markReceived(item.id, e.target.value);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // ActiveSetsPage Component
+    const ActiveSetsPage = () => {
+      const [items, setItems] = useState([]);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const fetchItems = async () => {
+          try {
+            if (window.firebase.error) throw new Error(window.firebase.error);
+            if (!window.firebase.db) throw new Error("Firebase database not initialized.");
+            const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
+            const itemsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setItems(itemsData);
+          } catch (error) {
+            console.error("Error fetching items:", error);
+            setError("Failed to load items. Please check your connection or try again.");
+          }
+        };
+        fetchItems();
+      }, []);
+
+      const markSetCompleted = async (setNumber) => {
+        try {
+          if (window.firebase.error) throw new Error(window.firebase.error);
+          const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
+          querySnapshot.docs.forEach(async (doc) => {
+            if (doc.data().setNumber === setNumber) {
+              await window.firebase.updateDoc(window.firebase.db.doc(`items/${doc.id}`), {
+                completed: true,
+                status: 'Completed'
+              });
+            }
+          });
+          setItems(items.map(item =>
+            item.setNumber === setNumber ? { ...item, completed: true, status: 'Completed' } : item
+          ));
+        } catch (error) {
+          console.error("Error marking set completed:", error);
+          setError("Failed to mark set as completed.");
+        }
+      };
+
+      const activeSets = [...new Set(items.filter(item => item.status === 'Active').map(item => item.setNumber))];
+
+      return (
+        <div className="p-6 fade-in">
+          <h2 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">Active Sets</h2>
+          {error && <p className="text-red-500 mb-4">{error}</p>}
+          {activeSets.map(setNumber => (
+            <div key={setNumber} className="mb-8">
+              <h3 className="text-2xl font-semibold text-gray-800 dark:text-white">{setNumber}</h3>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {items.filter(item => item.setNumber === setNumber && item.status === 'Active').map(item => (
+                  <div key={item.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover-scale">
+                    <p className="text-gray-800 dark:text-gray-200"><strong>ID:</strong> {item.id}</p>
+                    <p className="text-gray-800 dark:text-gray-200"><strong>Description:</strong> {item.description || 'N/A'}</p>
+                    <p className="text-gray-800 dark:text-gray-200"><strong>Overseer:</strong> {item.overseer || 'N/A'}</p>
+                    <p className="text-gray-800 dark:text-gray-200"><strong>Received By:</strong> {item.receivedBy || 'N/A'}</p>
+                    <p className="text-gray-800 dark:text-gray-200"><strong>Receipt Timestamp:</strong> {item.receiptTimestamp || 'N/A'}</p>
+                  </div>
+                ))}
+              </div>
+              <button
+                className="mt-4 bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 transition"
+                onClick={() => markSetCompleted(setNumber)}
+              >
+                Mark Set Completed
+              </button>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    // OrderFormPage Component
+    const OrderFormPage = () => {
+      const [items, setItems] = useState([]);
+      const [formData, setFormData] = useState({
+        description: '', setNumber: '', overseer: '', orderedBy: '', orderDate: '', expectedDelivery: '', destinationNotes: ''
+      });
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const fetchItems = async () => {
+          try {
+            if (window.firebase.error) throw new Error(window.firebase.error);
+            if (!window.firebase.db) throw new Error("Firebase database not initialized.");
+            const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
+            const itemsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setItems(itemsData);
+          } catch (error) {
+            console.error("Error fetching items:", error);
+            setError("Failed to load items. Please check your connection or try again.");
+          }
+        };
+        fetchItems();
+      }, []);
+
+      const generateItemId = () => {
+        return 'H' + Math.floor(1000 + Math.random() * 9000);
+      };
+
+      const addItem = async () => {
+        try {
+          if (window.firebase.error) throw new Error(window.firebase.error);
+          const newItem = {
+            id: generateItemId(),
+            ...formData,
+            actualDelivery: '',
+            receivedBy: '',
+            receiptTimestamp: '',
+            status: 'Incoming',
+            completed: false
+          };
+          await window.firebase.db.collection('items').doc(newItem.id).set(newItem);
+          setItems([...items, newItem]);
+          setFormData({ description: '', setNumber: '', overseer: '', orderedBy: '', orderDate: '', expectedDelivery: '', destinationNotes: '' });
+          alert('Order added! Buyer can view it below.');
+        } catch (error) {
+          console.error("Error adding item:", error);
+          setError("Failed to add order. Please try again.");
+        }
+      };
+
+      const downloadPO = (item) => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text('Purchase Order', 20, 20);
+        doc.setFontSize(12);
+        doc.text(`Item ID: ${item.id}`, 20, 40);
+        doc.text(`Description: ${item.description || 'N/A'}`, 20, 50);
+        doc.text(`Set Number: ${item.setNumber || 'N/A'}`, 20, 60);
+        doc.text(`Overseer: ${item.overseer || 'N/A'}`, 20, 70);
+        doc.text(`Ordered By: ${item.orderedBy || 'N/A'}`, 20, 80);
+        doc.text(`Order Date: ${item.orderDate || 'N/A'}`, 20, 90);
+        doc.text(`Expected Delivery: ${item.expectedDelivery || 'N/A'}`, 20, 100);
+        doc.text(`Destination Notes: ${item.destinationNotes || 'N/A'}`, 20, 110);
+        doc.save(`PO_${item.id}.pdf`);
+      };
+
+      return (
+        <div className="p-6 fade-in">
+          <h2 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">Order Form</h2>
+          {error && <p className="text-red-500 mb-4">{error}</p>}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+            <input
+              type="text"
+              placeholder="Description"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            />
+            <input
+              type="text"
+              placeholder="Set Number"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.setNumber}
+              onChange={(e) => setFormData({ ...formData, setNumber: e.target.value })}
+            />
+            <input
+              type="text"
+              placeholder="Overseer"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.overseer}
+              onChange={(e) => setFormData({ ...formData, overseer: e.target.value })}
+            />
+            <input
+              type="text"
+              placeholder="Ordered By"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.orderedBy}
+              onChange={(e) => setFormData({ ...formData, orderedBy: e.target.value })}
+            />
+            <input
+              type="date"
+              placeholder="Order Date"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.orderDate}
+              onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })}
+            />
+            <input
+              type="date"
+              placeholder="Expected Delivery"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.expectedDelivery}
+              onChange={(e) => setFormData({ ...formData, expectedDelivery: e.target.value })}
+            />
+            <textarea
+              placeholder="Destination Notes"
+              className="border p-3 mb-4 w-full rounded-lg dark:bg-gray-700 dark:text-white"
+              value={formData.destinationNotes}
+              onChange={(e) => setFormData({ ...formData, destinationNotes: e.target.value })}
+            />
+            <button
+              className="bg-blue-600 text-white p-3 rounded-lg w-full hover:bg-blue-700 transition"
+              onClick={addItem}
+            >
+              Add Order
+            </button>
+          </div>
+          <h3 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">New Orders for Buyer</h3>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {items.filter(item => item.status === 'Incoming').map(item => (
+              <div key={item.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover-scale">
+                <p className="text-gray-800 dark:text-gray-200"><strong>ID:</strong> {item.id}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Description:</strong> {item.description || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Set Number:</strong> {item.setNumber || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Overseer:</strong> {item.overseer || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Order Date:</strong> {item.orderDate || 'N/A'}</p>
+                <p className="text-gray-800 dark:text-gray-200"><strong>Expected Delivery:</strong> {item.expectedDelivery || 'N/A'}</p>
+                <button
+                  className="mt-4 bg-purple-600 text-white p-3 rounded-lg hover:bg-purple-700 transition"
+                  onClick={() => downloadPO(item)}
+                >
+                  Download P.O. (PDF)
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // ArchivePage Component
+    const ArchivePage = () => {
+      const [items, setItems] = useState([]);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const fetchItems = async () => {
+          try {
+            if (window.firebase.error) throw new Error(window.firebase.error);
+            if (!window.firebase.db) throw new Error("Firebase database not initialized.");
+            const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
+            const itemsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setItems(itemsData);
+          } catch (error) {
+            console.error("Error fetching items:", error);
+            setError("Failed to load items. Please check your connection or try again.");
+          }
+        };
+        fetchItems();
+      }, []);
+
+      const completedSets = [...new Set(items.filter(item => item.completed).map(item => item.setNumber))];
+
+      return (
+        <div className="p-6 fade-in">
+          <h2 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">Completed Sets Archive</h2>
+          {error && <p className="text-red-500 mb-4">{error}</p>}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {completedSets.map(setNumber => (
+              <div key={setNumber} className="mb-8">
+                <h3 className="text-2xl font-semibold text-gray-800 dark:text-white">{setNumber}</h3>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {items.filter(item => item.setNumber === setNumber && item.completed).map(item => (
+                    <div key={item.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg hover-scale">
+                      <p className="text-gray-800 dark:text-gray-200"><strong>ID:</strong> {item.id}</p>
+                      <p className="text-gray-800 dark:text-gray-200"><strong>Description:</strong> {item.description || 'N/A'}</p>
+                      <p className="text-gray-800 dark:text-gray-200"><strong>Overseer:</strong> {item.overseer || 'N/A'}</p>
+                      <p className="text-gray-800 dark:text-gray-200"><strong>Received By:</strong> {item.receivedBy || 'N/A'}</p>
+                      <p className="text-gray-800 dark:text-gray-200"><strong>Receipt Timestamp:</strong> {item.receiptTimestamp || 'N/A'}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // Main App Component
+    const App = () => {
+      const [page, setPage] = useState('home');
+      const [darkMode, setDarkMode] = useState(false);
+
+      useEffect(() => {
+        document.body.className = darkMode ? 'bg-gray-900' : 'bg-gray-100';
+      }, [darkMode]);
+
+      return (
+        <div className="container mx-auto">
+          <nav className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white flex justify-between items-center shadow-lg">
+            <div className="flex space-x-6">
+              <button onClick={() => setPage('home')} className="hover:underline text-lg font-medium">Home</button>
+              <button onClick={() => setPage('active')} className="hover:underline text-lg font-medium">Active Sets</button>
+              <button onClick={() => setPage('order')} className="hover:underline text-lg font-medium">Order Form</button>
+              <button onClick={() => setPage('archive')} className="hover:underline text-lg font-medium">Archive</button>
+            </div>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white p-2 rounded-full"
+            >
+              {darkMode ? 'Light Mode' : 'Dark Mode'}
+            </button>
+          </nav>
+          {page === 'home' && <HomePage />}
+          {page === 'active' && <ActiveSetsPage />}
+          {page === 'order' && <OrderFormPage />}
+          {page === 'archive' && <ArchivePage />}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
   </script>
 </body>
 </html>

@@ -201,16 +201,19 @@
                 if (user) {
                     const unsubscribeOrders = db.collection('orders').where('orderedBy', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        console.log('Orders snapshot:', data);
                         setOrders(data);
                     });
 
                     const unsubscribeSets = db.collection('sets').where('userId', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        console.log('Sets snapshot:', data);
                         setSets(data);
                     });
 
                     const unsubscribeReceivers = db.collection('receivers').where('userId', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        console.log('Receivers snapshot:', data);
                         setReceivers(data);
                     });
 
@@ -222,50 +225,86 @@
                 }
             }, [user]);
 
-            const handleOrder = () => {
-                db.collection('orders').add({
-                    item,
-                    quantity,
-                    recipient,
-                    orderedBy: user.uid,
-                    status: 'ordered',
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                setItem('');
-                setQuantity(1);
-                setRecipient('');
+            const handleOrder = async () => {
+                try {
+                    console.log('Adding order:', { item, quantity, recipient });
+                    await db.collection('orders').add({
+                        item,
+                        quantity,
+                        recipient,
+                        orderedBy: user.uid,
+                        status: 'ordered',
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    setItem('');
+                    setQuantity(1);
+                    setRecipient('');
+                } catch (err) {
+                    console.error('Error adding order:', err);
+                    setError('Failed to place order: ' + err.message);
+                }
             };
 
-            const updateStatus = (id, newStatus) => {
-                db.collection('orders').doc(id).update({ status: newStatus });
+            const updateStatus = async (id, newStatus) => {
+                try {
+                    console.log('Updating status for id:', id, 'to', newStatus);
+                    await db.collection('orders').doc(id).update({ status: newStatus });
+                } catch (err) {
+                    console.error('Error updating status:', err);
+                    setError('Failed to update status: ' + err.message);
+                }
             };
 
-            const addSet = () => {
+            const addSet = async () => {
                 if (newSetName.trim()) {
-                    db.collection('sets').add({
-                        name: newSetName,
-                        userId: user.uid
-                    });
-                    setNewSetName('');
+                    try {
+                        console.log('Adding set:', newSetName);
+                        await db.collection('sets').add({
+                            name: newSetName,
+                            userId: user.uid
+                        });
+                        setNewSetName('');
+                    } catch (err) {
+                        console.error('Error adding set:', err);
+                        setError('Failed to add set: ' + err.message);
+                    }
                 }
             };
 
-            const deleteSet = (id) => {
-                db.collection('sets').doc(id).delete();
+            const deleteSet = async (id) => {
+                try {
+                    console.log('Deleting set id:', id);
+                    await db.collection('sets').doc(id).delete();
+                } catch (err) {
+                    console.error('Error deleting set:', err);
+                    setError('Failed to delete set: ' + err.message);
+                }
             };
 
-            const addReceiver = () => {
+            const addReceiver = async () => {
                 if (newReceiverName.trim()) {
-                    db.collection('receivers').add({
-                        name: newReceiverName,
-                        userId: user.uid
-                    });
-                    setNewReceiverName('');
+                    try {
+                        console.log('Adding receiver:', newReceiverName);
+                        await db.collection('receivers').add({
+                            name: newReceiverName,
+                            userId: user.uid
+                        });
+                        setNewReceiverName('');
+                    } catch (err) {
+                        console.error('Error adding receiver:', err);
+                        setError('Failed to add receiver: ' + err.message);
+                    }
                 }
             };
 
-            const deleteReceiver = (id) => {
-                db.collection('receivers').doc(id).delete();
+            const deleteReceiver = async (id) => {
+                try {
+                    console.log('Deleting receiver id:', id);
+                    await db.collection('receivers').doc(id).delete();
+                } catch (err) {
+                    console.error('Error deleting receiver:', err);
+                    setError('Failed to delete receiver: ' + err.message);
+                }
             };
 
             const handleSetKeyDown = (e) => {

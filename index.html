@@ -116,7 +116,7 @@
             padding: 10px;
             margin-left: 10px;
         }
-        .print-set-button {
+        .print-all-button {
             background-color: #ff9500;
             padding: 10px 20px;
             margin-bottom: 20px;
@@ -260,6 +260,9 @@
     <!-- jsPDF CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
+    <!-- EmailJS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
     <!-- Firebase Compat CDNs for namespaced API -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
@@ -322,7 +325,7 @@
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
                         .catch(err => {
-                            setError(err.message);
+                            setError(err.toString());
                             setLoading(false);
                         });
                 };
@@ -426,7 +429,7 @@
                     setStore('');
                     setRecipient('');
                 } catch (err) {
-                    setError('Failed to place order: ' + err.message);
+                    setError('Failed to place order: ' + (err.message || err.toString()));
                 }
             };
 
@@ -454,243 +457,6 @@
                 doc.text('Description:', 20, y);
                 doc.setFontSize(10);
                 doc.text(orderData.description, 20, y + 10, { maxWidth: 160 });
-                doc.autoPrint({variant: 'non-conform'});
-                const blobUrl = doc.output('bloburl');
-                const printWindow = window.open(blobUrl);
-                printWindow.print();
-            };
-
-            const printSetOrders = (setName) => {
-                const setOrders = orders.filter(order => order.items.some(it => it.set === setName));
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                let y = 20;
-                doc.setFontSize(18);
-                doc.text(`Orders for Set: ${setName}`, 20, y);
-                y += 10;
-                setOrders.forEach((order, index) => {
-                    doc.setFontSize(14);
-                    doc.text(`Order #${order.orderNumber}`, 20, y);
-                    y += 10;
-                    doc.setFontSize(12);
-                    doc.text(`Recipient: ${order.recipient}`, 20, y);
-                    y += 10;
-                    doc.text('Items:', 20, y);
-                    y += 10;
-                    order.items.forEach((it, idx) => {
-                        doc.text(`${idx + 1}. ${it.item} (Set: ${it.set})`, 20, y);
-                        y += 10;
-                    });
-                    doc.text(`Description: ${order.description}`, 20, y);
-                    y += 10;
-                    doc.text(`Type: ${order.type}`, 20, y);
-                    y += 10;
-                    if (order.type === 'pickup') {
-                        doc.text(`Pickup Date: ${order.pickupDate}`, 20, y);
-                    } else {
-                        doc.text(`Delivery Dates: ${order.deliveryStartDate} to ${order.deliveryEndDate}`, 20, y);
-                    }
-                    y += 10;
-                    doc.text(`Store/Shipper: ${order.store}`, 20, y);
-                    y += 10;
-                    if (order.receivedBy) {
-                        doc.text(`Received By: ${order.receivedBy}`, 20, y);
-                        y += 10;
-                    }
-                    if (order.receivedTimestamp) {
-                        doc.text(`Received On: ${new Date(order.receivedTimestamp.seconds * 1000).toLocaleString()}`, 20, y);
-                        y += 10;
-                    }
-                    if (index < setOrders.length - 1) {
-                        doc.addPage();
-                        y = 20;
-                    }
-                });
-                doc.autoPrint({variant: 'non-conform'});
-                const blobUrl = doc.output('bloburl');
-                const printWindow = window.open(blobUrl);
-                printWindow.print();
-            };
-
-            const printIndividualItem = (item) => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                doc.setFontSize(18);
-                doc.text('Individual Item Details', 20, 20);
-                doc.setFontSize(12);
-                doc.text(`Item: ${item.item}`, 20, 35);
-                doc.text(`Set: ${item.set}`, 20, 45);
-                if (item.imageUrl) {
-                    doc.addImage(item.imageUrl, 'JPEG', 20, 55, 100, 100); // Assume JPEG, adjust as needed
-                }
-                doc.autoPrint({variant: 'non-conform'});
-                const blobUrl = doc.output('bloburl');
-                const printWindow = window.open(blobUrl);
-                printWindow.print();
-            };
-
-            const updateStatus = async (id, newStatus) => {
-                try {
-                    await db.collection('orders').doc(id).update({ status: newStatus });
-                } catch (err) {
-                    setError('Failed to update status: ' + err.message);
-                }
-            };
-
-            const deleteOrder = async (id) => {
-                if (window.confirm('Are you sure you want to delete this order?')) {
-                    try {
-                        await db.collection('orders').doc(id).delete();
-                    } catch (err) {
-                        setError('Failed to delete order: ' + err.message);
-                    }
-                }
-            };
-
-            const startReceiving = (id) => {
-                setReceivingOrderId(id);
-                setReceivedByName('');
-            };
-
-            const confirmReceived = async (id) => {
-                if (receivedByName && window.confirm(`Mark as received by ${receivedByName}?`)) {
-                    try {
-                        await db.collection('orders').doc(id).update({
-                            status: 'received',
-                            receivedBy: receivedByName,
-                            receivedTimestamp: firebase.firestore.FieldValue.serverTimestamp()
-                        });
-                        setReceivingOrderId(null);
-                    } catch (err) {
-                        setError('Failed to mark received: ' + err.message);
-                    }
-                }
-            };
-
-            const archiveOrdersWithSet = async (setName) => {
-                const ordersToArchive = orders.filter(order => 
-                    order.items && Array.isArray(order.items) && order.items.some(item => item.set === setName)
-                );
-                for (const order of ordersToArchive) {
-                    await updateStatus(order.id, 'archived');
-                }
-            };
-
-            const addSet = async () => {
-                if (newSetName.trim()) {
-                    try {
-                        await db.collection('sets').add({
-                            name: newSetName,
-                            userId: user.uid
-                        });
-                        setNewSetName('');
-                    } catch (err) {
-                        setError('Failed to add set: ' + err.message);
-                    }
-                }
-            };
-
-            const deleteSet = async (id, setName) => {
-                try {
-                    await db.collection('sets').doc(id).delete();
-                    await archiveOrdersWithSet(setName);
-                } catch (err) {
-                    setError('Failed to delete set: ' + err.message);
-                }
-            };
-
-            const addReceiver = async () => {
-                if (newReceiverName.trim()) {
-                    try {
-                        await db.collection('receivers').add({
-                            name: newReceiverName,
-                            userId: user.uid
-                        });
-                        setNewReceiverName('');
-                    } catch (err) {
-                        setError('Failed to add receiver: ' + err.message);
-                    }
-                }
-            };
-
-            const deleteReceiver = async (id) => {
-                try {
-                    await db.collection('receivers').doc(id).delete();
-                } catch (err) {
-                    setError('Failed to delete receiver: ' + err.message);
-                }
-            };
-
-            const handleSetKeyDown = (e) => {
-                if (e.key === 'Enter') {
-                    addSet();
-                }
-            };
-
-            const handleReceiverKeyDown = (e) => {
-                if (e.key === 'Enter') {
-                    addReceiver();
-                }
-            };
-
-            const handleArchiveAll = async () => {
-                if (archiveSet) {
-                    await archiveOrdersWithSet(archiveSet);
-                    setArchiveSet('');
-                }
-            };
-
-            const printAllReceived = () => {
-                const receivedOrders = orders.filter(order => order.status === 'received');
-                if (receivedOrders.length === 0) return;
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                let y = 20;
-                doc.setFontSize(18);
-                doc.text('Received Orders', 20, y);
-                y += 10;
-                receivedOrders.forEach((order, index) => {
-                    doc.setFontSize(14);
-                    doc.text(`Order #${order.orderNumber}`, 20, y);
-                    y += 10;
-                    doc.setFontSize(12);
-                    doc.text(`Recipient: ${order.recipient}`, 20, y);
-                    y += 10;
-                    doc.text('Items:', 20, y);
-                    y += 10;
-                    order.items.forEach((it, idx) => {
-                        doc.text(`${idx + 1}. ${it.item} (Set: ${it.set})`, 20, y);
-                        y += 10;
-                        if (it.imageUrl) {
-                            doc.addImage(it.imageUrl, 'JPEG', 20, y, 50, 50); // Smaller image in PDF
-                            y += 60;
-                        }
-                    });
-                    doc.text(`Description: ${order.description}`, 20, y);
-                    y += 10;
-                    doc.text(`Type: ${order.type}`, 20, y);
-                    y += 10;
-                    if (order.type === 'pickup') {
-                        doc.text(`Pickup Date: ${order.pickupDate}`, 20, y);
-                    } else {
-                        doc.text(`Delivery Dates: ${order.deliveryStartDate} to ${order.deliveryEndDate}`, 20, y);
-                    }
-                    y += 10;
-                    doc.text(`Store/Shipper: ${order.store}`, 20, y);
-                    y += 10;
-                    if (order.receivedBy) {
-                        doc.text(`Received By: ${order.receivedBy}`, 20, y);
-                        y += 10;
-                    }
-                    if (order.receivedTimestamp) {
-                        doc.text(`Received On: ${new Date(order.receivedTimestamp.seconds * 1000).toLocaleString()}`, 20, y);
-                        y += 10;
-                    }
-                    if (index < receivedOrders.length - 1) {
-                        doc.addPage();
-                        y = 20;
-                    }
-                });
                 doc.autoPrint({variant: 'non-conform'});
                 const blobUrl = doc.output('bloburl');
                 const printWindow = window.open(blobUrl);
@@ -856,7 +622,7 @@
                                         value="pickup" 
                                         checked={orderType === 'pickup'} 
                                         onChange={e => setOrderType(e.target.value)} 
-                                        />
+                                    />
                                     Pickup
                                 </label>
                                 <label>
@@ -865,7 +631,7 @@
                                         value="delivery" 
                                         checked={orderType === 'delivery'} 
                                         onChange={e => setOrderType(e.target.value)} 
-                                        />
+                                    />
                                     Delivery
                                 </label>
                             </div>

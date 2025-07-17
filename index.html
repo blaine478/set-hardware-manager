@@ -539,6 +539,63 @@
                 printWindow.print();
             };
 
+            const printAllReceived = () => {
+                const receivedOrders = orders.filter(order => order.status === 'received');
+                if (receivedOrders.length === 0) return;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                let y = 20;
+                doc.setFontSize(18);
+                doc.text('Received Orders', 20, y);
+                y += 10;
+                receivedOrders.forEach((order, index) => {
+                    doc.setFontSize(14);
+                    doc.text(`Order #${order.orderNumber}`, 20, y);
+                    y += 10;
+                    doc.setFontSize(12);
+                    doc.text(`Recipient: ${order.recipient}`, 20, y);
+                    y += 10;
+                    doc.text('Items:', 20, y);
+                    y += 10;
+                    order.items.forEach((it, idx) => {
+                        doc.text(`${idx + 1}. ${it.item} (Set: ${it.set})`, 20, y);
+                        y += 10;
+                        if (it.imageUrl) {
+                            doc.addImage(it.imageUrl, 'JPEG', 20, y, 50, 50);
+                            y += 60;
+                        }
+                    });
+                    doc.text(`Description: ${order.description}`, 20, y);
+                    y += 10;
+                    doc.text(`Type: ${order.type}`, 20, y);
+                    y += 10;
+                    if (order.type === 'pickup') {
+                        doc.text(`Pickup Date: ${order.pickupDate}`, 20, y);
+                    } else {
+                        doc.text(`Delivery Dates: ${order.deliveryStartDate} to ${order.deliveryEndDate}`, 20, y);
+                    }
+                    y += 10;
+                    doc.text(`Store/Shipper: ${order.store}`, 20, y);
+                    y += 10;
+                    if (order.receivedBy) {
+                        doc.text(`Received By: ${order.receivedBy}`, 20, y);
+                        y += 10;
+                    }
+                    if (order.receivedTimestamp) {
+                        doc.text(`Received On: ${new Date(order.receivedTimestamp.seconds * 1000).toLocaleString()}`, 20, y);
+                        y += 10;
+                    }
+                    if (index < receivedOrders.length - 1) {
+                        doc.addPage();
+                        y = 20;
+                    }
+                });
+                doc.autoPrint({variant: 'non-conform'});
+                const blobUrl = doc.output('bloburl');
+                const printWindow = window.open(blobUrl);
+                printWindow.print();
+            };
+
             const filteredOrders = orders.filter(order => {
                 if (tab === 'Incoming') return order.status === 'ordered';
                 if (tab === 'Received') return order.status === 'received';

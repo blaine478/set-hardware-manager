@@ -155,6 +155,30 @@
             font-size: 18px;
             color: #007aff;
         }
+        .delete-button {
+            background-color: #ff3b30;
+            padding: 6px 12px;
+            margin-left: 10px;
+            font-size: 14px;
+            border-radius: 6px;
+        }
+        .delete-button:hover {
+            background-color: #d9362b;
+        }
+        .receive-dropdown {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .receive-dropdown select {
+            flex: 1;
+            margin-right: 10px;
+        }
+        .receive-dropdown button {
+            width: auto;
+            padding: 10px 20px;
+            background-color: #34c759;
+        }
     </style>
 </head>
 <body>
@@ -193,6 +217,8 @@
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(true);
             const [expandedOrders, setExpandedOrders] = useState({});
+            const [receivingOrderId, setReceivingOrderId] = useState(null);
+            const [receivedByName, setReceivedByName] = useState('');
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -315,14 +341,19 @@
                 }
             };
 
-            const markReceived = async (id) => {
-                const receivedBy = window.prompt('Received by whom?');
-                if (receivedBy) {
+            const startReceiving = (id) => {
+                setReceivingOrderId(id);
+                setReceivedByName('');
+            };
+
+            const confirmReceived = async (id) => {
+                if (receivedByName) {
                     try {
                         await db.collection('orders').doc(id).update({
                             status: 'received',
-                            receivedBy
+                            receivedBy: receivedByName
                         });
+                        setReceivingOrderId(null);
                     } catch (err) {
                         setError('Failed to mark received: ' + err.message);
                     }
@@ -581,7 +612,20 @@
                                             {order.receivedBy && <p><strong>Received By:</strong> {order.receivedBy}</p>}
                                         </div>
                                     )}
-                                    {tab === 'Incoming' && <button className="status-button" onClick={() => markReceived(order.id)}>Received By</button>}
+                                    {tab === 'Incoming' && (
+                                        <>
+                                            <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
+                                            {receivingOrderId === order.id && (
+                                                <div className="receive-dropdown">
+                                                    <select value={receivedByName} onChange={e => setReceivedByName(e.target.value)}>
+                                                        <option value="">Select Receiver</option>
+                                                        {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                                    </select>
+                                                    <button onClick={() => confirmReceived(order.id)}>Confirm</button>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
                                     {tab === 'Received' && <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>}
                                 </li>
                             ))}

@@ -89,26 +89,24 @@
             background-color: #007aff;
             color: #ffffff;
             border: none;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 16px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
             cursor: pointer;
-            width: 100%;
-            margin: 10px 0;
             transition: background-color 0.3s;
+            width: auto;
+            margin: 5px 0;
         }
         button:hover {
             background-color: #0056b3;
         }
         .add-item-button {
-            width: auto;
-            padding: 10px 20px;
+            padding: 8px 16px;
             margin-left: 10px;
         }
         .remove-item-button {
             background-color: #ff3b30;
-            width: auto;
-            padding: 10px;
+            padding: 8px 16px;
             margin-left: 10px;
         }
         ul {
@@ -129,15 +127,8 @@
         }
         .expand-button {
             background-color: #007aff;
-            padding: 5px 10px;
-            width: auto;
+            padding: 6px 12px;
             margin-left: auto;
-        }
-        .details {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: #e5e5ea;
-            border-radius: 8px;
         }
         .status-button {
             background-color: #34c759;
@@ -179,8 +170,7 @@
             margin-right: 10px;
         }
         .receive-dropdown button {
-            width: auto;
-            padding: 10px 20px;
+            padding: 8px 16px;
             background-color: #34c759;
         }
         .archive-all {
@@ -201,6 +191,33 @@
         }
         .filter-group input {
             margin-bottom: 10px;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            font-size: 18px;
+        }
+        .modal-close {
+            background-color: #ff3b30;
+            padding: 8px 16px;
+            margin-top: 20px;
+            width: auto;
         }
     </style>
 </head>
@@ -239,7 +256,7 @@
             const [recipient, setRecipient] = useState('');
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(true);
-            const [expandedOrders, setExpandedOrders] = useState({});
+            const [selectedOrder, setSelectedOrder] = useState(null);
             const [receivingOrderId, setReceivingOrderId] = useState(null);
             const [receivedByName, setReceivedByName] = useState('');
             const [archiveSet, setArchiveSet] = useState('');
@@ -385,10 +402,6 @@
                         setError('Failed to mark received: ' + err.message);
                     }
                 }
-            };
-
-            const toggleExpand = (id) => {
-                setExpandedOrders(prev => ({ ...prev, [id]: !prev[id] }));
             };
 
             const archiveOrdersWithSet = async (setName) => {
@@ -669,29 +682,10 @@
                                     <li key={order.id} className="order-item">
                                         <div className="order-summary">
                                             <span>Order #{order.orderNumber} for {order.recipient}</span>
-                                            <button className="expand-button" onClick={() => toggleExpand(order.id)}>
-                                                {expandedOrders[order.id] ? 'Collapse' : 'Expand'}
+                                            <button className="expand-button" onClick={() => setSelectedOrder(order)}>
+                                                Expand
                                             </button>
                                         </div>
-                                        {expandedOrders[order.id] && (
-                                            <div className="details">
-                                                <p><strong>Items:</strong></p>
-                                                <ul>
-                                                    {order.items.map((it, idx) => (
-                                                        <li key={idx}>{it.item} (Set: {it.set})</li>
-                                                    ))}
-                                                </ul>
-                                                <p><strong>Description:</strong> {order.description}</p>
-                                                <p><strong>Type:</strong> {order.type}</p>
-                                                {order.type === 'pickup' ? (
-                                                    <p><strong>Pickup Date:</strong> {order.pickupDate}</p>
-                                                ) : (
-                                                    <p><strong>Delivery Dates:</strong> {order.deliveryStartDate} to {order.deliveryEndDate}</p>
-                                                )}
-                                                <p><strong>Store/Shipper:</strong> {order.store}</p>
-                                                {order.receivedBy && <p><strong>Received By:</strong> {order.receivedBy}</p>}
-                                            </div>
-                                        )}
                                         {tab === 'Incoming' && (
                                             <>
                                                 <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
@@ -716,6 +710,31 @@
                                     </li>
                                 ))}
                             </ul>
+                        </div>
+                    )}
+                    {selectedOrder && (
+                        <div className="modal" onClick={() => setSelectedOrder(null)}>
+                            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                <h2>Order Details</h2>
+                                <p><strong>Order #:</strong> {selectedOrder.orderNumber}</p>
+                                <p><strong>Recipient:</strong> {selectedOrder.recipient}</p>
+                                <p><strong>Items:</strong></p>
+                                <ul>
+                                    {selectedOrder.items.map((it, idx) => (
+                                        <li key={idx}>{it.item} (Set: {it.set})</li>
+                                    ))}
+                                </ul>
+                                <p><strong>Description:</strong> {selectedOrder.description}</p>
+                                <p><strong>Type:</strong> {selectedOrder.type}</p>
+                                {selectedOrder.type === 'pickup' ? (
+                                    <p><strong>Pickup Date:</strong> {selectedOrder.pickupDate}</p>
+                                ) : (
+                                    <p><strong>Delivery Dates:</strong> {selectedOrder.deliveryStartDate} to {selectedOrder.deliveryEndDate}</p>
+                                )}
+                                <p><strong>Store/Shipper:</strong> {selectedOrder.store}</p>
+                                {selectedOrder.receivedBy && <p><strong>Received By:</strong> {selectedOrder.receivedBy}</p>}
+                                <button className="modal-close" onClick={() => setSelectedOrder(null)}>Close</button>
+                            </div>
                         </div>
                     )}
                 </div>

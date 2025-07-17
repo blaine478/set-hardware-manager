@@ -113,6 +113,11 @@
             padding: 10px;
             margin-left: 10px;
         }
+        .print-all-button {
+            background-color: #ff9500;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+        }
         ul {
             list-style: none;
             padding: 0;
@@ -288,7 +293,7 @@
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
             const emailjsServiceId = 'service_bg5walm'; // Your service ID
-            const emailjsTemplateId = 'template_1o195q5'; // Replace with your template ID after creation
+            const emailjsTemplateId = 'YOUR_EMAILJS_TEMPLATE_ID'; // Replace with your template ID after creation
             const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Your public key
 
             const firebaseConfig = {
@@ -373,21 +378,25 @@
             const generatePDFBase64 = (orderData) => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
-                doc.text('Hardware Order Details', 10, 10);
-                doc.text(`Order Number: ${orderData.orderNumber}`, 10, 20);
-                doc.text(`Recipient: ${orderData.recipient}`, 10, 30);
-                doc.text(`Store/Shipper: ${orderData.store}`, 10, 40);
-                doc.text(`Type: ${orderData.type}`, 10, 50);
+                doc.setFontSize(18);
+                doc.text('Hardware Order Details', 20, 20);
+                doc.setFontSize(12);
+                doc.text(`Order Number: ${orderData.orderNumber}`, 20, 30);
+                doc.text(`Recipient: ${orderData.recipient}`, 20, 40);
+                doc.text(`Store/Shipper: ${orderData.store}`, 20, 50);
+                doc.text(`Type: ${orderData.type}`, 20, 60);
                 if (orderData.type === 'pickup') {
-                    doc.text(`Pickup Date: ${orderData.pickupDate}`, 10, 60);
+                    doc.text(`Pickup Date: ${orderData.pickupDate}`, 20, 70);
                 } else {
-                    doc.text(`Delivery Dates: ${orderData.deliveryStartDate} to ${orderData.deliveryEndDate}`, 10, 60);
+                    doc.text(`Delivery Dates: ${orderData.deliveryStartDate} to ${orderData.deliveryEndDate}`, 20, 70);
                 }
-                doc.text('Items:', 10, 70);
+                doc.text('Items:', 20, 80);
+                let y = 90;
                 orderData.items.forEach((it, idx) => {
-                    doc.text(`- ${it.item} (Set: ${it.set})`, 10, 80 + (idx * 10));
+                    doc.text(`- ${it.item} (Set: ${it.set})`, 20, y);
+                    y += 10;
                 });
-                doc.text(`Description: ${orderData.description}`, 10, 80 + (orderData.items.length * 10));
+                doc.text(`Description: ${orderData.description}`, 20, y);
                 return doc.output('datauristring').split(',')[1]; // Base64
             };
 

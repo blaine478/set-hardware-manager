@@ -96,6 +96,11 @@
             color: #ff3b30;
             text-align: center;
         }
+        .loading {
+            text-align: center;
+            font-size: 18px;
+            color: #007aff;
+        }
     </style>
 </head>
 <body>
@@ -118,12 +123,11 @@
             const [user, setUser] = useState(null);
             const [tab, setTab] = useState('Incoming');
             const [orders, setOrders] = useState([]);
-            const [email, setEmail] = useState('');
-            const [password, setPassword] = useState('');
             const [item, setItem] = useState('');
             const [quantity, setQuantity] = useState(1);
             const [recipient, setRecipient] = useState('');
             const [error, setError] = useState('');
+            const [loading, setLoading] = useState(true);
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -142,7 +146,24 @@
             const db = firebase.firestore();
 
             useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(setUser);
+                const handleAuth = () => {
+                    auth.signInAnonymously()
+                        .then(() => setLoading(false))
+                        .catch(err => {
+                            setError(err.message);
+                            setLoading(false);
+                        });
+                };
+
+                const unsubscribe = auth.onAuthStateChanged(currentUser => {
+                    setUser(currentUser);
+                    if (!currentUser) {
+                        handleAuth();
+                    } else {
+                        setLoading(false);
+                    }
+                });
+
                 return unsubscribe;
             }, []);
 
@@ -155,19 +176,6 @@
                     return unsubscribe;
                 }
             }, [user]);
-
-            const handleAuth = (action) => {
-                setError('');
-                if (action === 'signup') {
-                    auth.createUserWithEmailAndPassword(email, password).catch(err => setError(err.message));
-                } else {
-                    auth.signInWithEmailAndPassword(email, password).catch(err => setError(err.message));
-                }
-            };
-
-            const handleLogout = () => {
-                auth.signOut();
-            };
 
             const handleOrder = () => {
                 db.collection('orders').add({
@@ -194,17 +202,12 @@
                 return false;
             });
 
-            if (!user) {
-                return (
-                    <div className="form">
-                        <h1>Login / Sign Up</h1>
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" />
-                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
-                        <button onClick={() => handleAuth('login')}>Login</button>
-                        <button onClick={() => handleAuth('signup')}>Sign Up</button>
-                        {error && <p className="error">{error}</p>}
-                    </div>
-                );
+            if (loading) {
+                return <div className="loading">Loading...</div>;
+            }
+
+            if (error) {
+                return <p className="error">{error}</p>;
             }
 
             return (
@@ -230,7 +233,8 @@
                         </div>
                     ) : tab === 'Settings' ? (
                         <div className="form">
-                            <button onClick={handleLogout}>Logout</button>
+                            {/* Optional: Add any settings here if needed */}
+                            <p>Anonymous session active.</p>
                         </div>
                     ) : (
                         <ul className="order-list">

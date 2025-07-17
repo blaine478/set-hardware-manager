@@ -62,13 +62,28 @@
             align-items: center;
             margin-bottom: 10px;
         }
-        input {
+        .item-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .item-row input, .item-row select {
             flex: 1;
-            padding: 10px;
             margin-right: 10px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
             border: 1px solid #d2d2d7;
             border-radius: 8px;
             font-size: 16px;
+        }
+        textarea {
+            height: 100px;
+        }
+        label {
+            margin-right: 20px;
         }
         button {
             background-color: #007aff;
@@ -78,45 +93,58 @@
             border-radius: 8px;
             font-size: 16px;
             cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
             transition: background-color 0.3s;
         }
         button:hover {
             background-color: #0056b3;
         }
-        .add-button {
+        .add-item-button {
             width: auto;
             padding: 10px 20px;
+            margin-left: 10px;
+        }
+        .remove-item-button {
+            background-color: #ff3b30;
+            width: auto;
+            padding: 10px;
+            margin-left: 10px;
         }
         ul {
             list-style: none;
             padding: 0;
         }
-        li {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        li.order-item {
             background-color: #f9f9f9;
             border-radius: 8px;
             padding: 15px;
             margin: 10px 0;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
-        .delete-button {
-            background-color: #ff3b30;
-            padding: 8px 16px;
-            margin-left: 10px;
+        .order-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        .delete-button:hover {
-            background-color: #d9362b;
+        .expand-button {
+            background-color: #007aff;
+            padding: 5px 10px;
+            width: auto;
+            margin-left: auto;
+        }
+        .details {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #e5e5ea;
+            border-radius: 8px;
         }
         .status-button {
             background-color: #34c759;
             margin-top: 10px;
-            width: 100%;
         }
         .archive-button {
             background-color: #ff9500;
-            width: 100%;
         }
         .error {
             color: #ff3b30;
@@ -153,11 +181,18 @@
             const [receivers, setReceivers] = useState([]);
             const [newSetName, setNewSetName] = useState('');
             const [newReceiverName, setNewReceiverName] = useState('');
-            const [item, setItem] = useState('');
-            const [quantity, setQuantity] = useState(1);
+            const [items, setItems] = useState([{ item: '', set: '' }]);
+            const [description, setDescription] = useState('');
+            const [orderNumber, setOrderNumber] = useState('');
+            const [orderType, setOrderType] = useState('pickup');
+            const [pickupDate, setPickupDate] = useState('');
+            const [deliveryStartDate, setDeliveryStartDate] = useState('');
+            const [deliveryEndDate, setDeliveryEndDate] = useState('');
+            const [store, setStore] = useState('');
             const [recipient, setRecipient] = useState('');
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(true);
+            const [expandedOrders, setExpandedOrders] = useState({});
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -201,19 +236,16 @@
                 if (user) {
                     const unsubscribeOrders = db.collection('orders').where('orderedBy', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        console.log('Orders snapshot:', data);
                         setOrders(data);
                     });
 
                     const unsubscribeSets = db.collection('sets').where('userId', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        console.log('Sets snapshot:', data);
                         setSets(data);
                     });
 
                     const unsubscribeReceivers = db.collection('receivers').where('userId', '==', user.uid).onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        console.log('Receivers snapshot:', data);
                         setReceivers(data);
                     });
 
@@ -225,47 +257,91 @@
                 }
             }, [user]);
 
+            const addItemRow = () => {
+                setItems([...items, { item: '', set: '' }]);
+            };
+
+            const removeItemRow = (index) => {
+                const newItems = items.filter((_, i) => i !== index);
+                setItems(newItems);
+            };
+
+            const updateItem = (index, field, value) => {
+                const newItems = [...items];
+                newItems[index][field] = value;
+                setItems(newItems);
+            };
+
             const handleOrder = async () => {
                 try {
-                    console.log('Adding order:', { item, quantity, recipient });
-                    await db.collection('orders').add({
-                        item,
-                        quantity,
+                    const orderData = {
+                        items,
+                        description,
+                        orderNumber,
+                        type: orderType,
+                        store,
                         recipient,
                         orderedBy: user.uid,
                         status: 'ordered',
                         timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    setItem('');
-                    setQuantity(1);
+                    };
+                    if (orderType === 'pickup') {
+                        orderData.pickupDate = pickupDate;
+                    } else {
+                        orderData.deliveryStartDate = deliveryStartDate;
+                        orderData.deliveryEndDate = deliveryEndDate;
+                    }
+                    await db.collection('orders').add(orderData);
+                    // Reset form
+                    setItems([{ item: '', set: '' }]);
+                    setDescription('');
+                    setOrderNumber('');
+                    setOrderType('pickup');
+                    setPickupDate('');
+                    setDeliveryStartDate('');
+                    setDeliveryEndDate('');
+                    setStore('');
                     setRecipient('');
                 } catch (err) {
-                    console.error('Error adding order:', err);
                     setError('Failed to place order: ' + err.message);
                 }
             };
 
             const updateStatus = async (id, newStatus) => {
                 try {
-                    console.log('Updating status for id:', id, 'to', newStatus);
                     await db.collection('orders').doc(id).update({ status: newStatus });
                 } catch (err) {
-                    console.error('Error updating status:', err);
                     setError('Failed to update status: ' + err.message);
                 }
+            };
+
+            const markReceived = async (id) => {
+                const receivedBy = window.prompt('Received by whom?');
+                if (receivedBy) {
+                    try {
+                        await db.collection('orders').doc(id).update({
+                            status: 'received',
+                            receivedBy
+                        });
+                    } catch (err) {
+                        setError('Failed to mark received: ' + err.message);
+                    }
+                }
+            };
+
+            const toggleExpand = (id) => {
+                setExpandedOrders(prev => ({ ...prev, [id]: !prev[id] }));
             };
 
             const addSet = async () => {
                 if (newSetName.trim()) {
                     try {
-                        console.log('Adding set:', newSetName);
                         await db.collection('sets').add({
                             name: newSetName,
                             userId: user.uid
                         });
                         setNewSetName('');
                     } catch (err) {
-                        console.error('Error adding set:', err);
                         setError('Failed to add set: ' + err.message);
                     }
                 }
@@ -273,10 +349,8 @@
 
             const deleteSet = async (id) => {
                 try {
-                    console.log('Deleting set id:', id);
                     await db.collection('sets').doc(id).delete();
                 } catch (err) {
-                    console.error('Error deleting set:', err);
                     setError('Failed to delete set: ' + err.message);
                 }
             };
@@ -284,14 +358,12 @@
             const addReceiver = async () => {
                 if (newReceiverName.trim()) {
                     try {
-                        console.log('Adding receiver:', newReceiverName);
                         await db.collection('receivers').add({
                             name: newReceiverName,
                             userId: user.uid
                         });
                         setNewReceiverName('');
                     } catch (err) {
-                        console.error('Error adding receiver:', err);
                         setError('Failed to add receiver: ' + err.message);
                     }
                 }
@@ -299,10 +371,8 @@
 
             const deleteReceiver = async (id) => {
                 try {
-                    console.log('Deleting receiver id:', id);
                     await db.collection('receivers').doc(id).delete();
                 } catch (err) {
-                    console.error('Error deleting receiver:', err);
                     setError('Failed to delete receiver: ' + err.message);
                 }
             };
@@ -350,9 +420,96 @@
                     </div>
                     {tab === 'Order' ? (
                         <div className="form">
-                            <input value={item} onChange={e => setItem(e.target.value)} placeholder="Item" />
-                            <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} />
-                            <input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="Recipient" />
+                            <h2>Items</h2>
+                            {items.map((it, index) => (
+                                <div key={index} className="item-row">
+                                    <input 
+                                        value={it.item} 
+                                        onChange={e => updateItem(index, 'item', e.target.value)} 
+                                        placeholder="Item" 
+                                    />
+                                    <select 
+                                        value={it.set} 
+                                        onChange={e => updateItem(index, 'set', e.target.value)}
+                                    >
+                                        <option value="">Select Set</option>
+                                        {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                    {index > 0 && <button className="remove-item-button" onClick={() => removeItemRow(index)}>Remove</button>}
+                                </div>
+                            ))}
+                            <button className="add-item-button" onClick={addItemRow}>Add Item</button>
+
+                            <textarea 
+                                value={description} 
+                                onChange={e => setDescription(e.target.value)} 
+                                placeholder="Description" 
+                            />
+
+                            <input 
+                                value={orderNumber} 
+                                onChange={e => setOrderNumber(e.target.value)} 
+                                placeholder="Order Number" 
+                            />
+
+                            <div>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        value="pickup" 
+                                        checked={orderType === 'pickup'} 
+                                        onChange={e => setOrderType(e.target.value)} 
+                                    />
+                                    Pickup
+                                </label>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        value="delivery" 
+                                        checked={orderType === 'delivery'} 
+                                        onChange={e => setOrderType(e.target.value)} 
+                                    />
+                                    Delivery
+                                </label>
+                            </div>
+
+                            {orderType === 'pickup' ? (
+                                <input 
+                                    type="date" 
+                                    value={pickupDate} 
+                                    onChange={e => setPickupDate(e.target.value)} 
+                                />
+                            ) : (
+                                <>
+                                    <input 
+                                        type="date" 
+                                        value={deliveryStartDate} 
+                                        onChange={e => setDeliveryStartDate(e.target.value)} 
+                                        placeholder="Delivery Start Date" 
+                                    />
+                                    <input 
+                                        type="date" 
+                                        value={deliveryEndDate} 
+                                        onChange={e => setDeliveryEndDate(e.target.value)} 
+                                        placeholder="Delivery End Date" 
+                                    />
+                                </>
+                            )}
+
+                            <input 
+                                value={store} 
+                                onChange={e => setStore(e.target.value)} 
+                                placeholder="Store/Shipper" 
+                            />
+
+                            <select 
+                                value={recipient} 
+                                onChange={e => setRecipient(e.target.value)}
+                            >
+                                <option value="">Select Recipient</option>
+                                {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                            </select>
+
                             <button onClick={handleOrder}>Place Order</button>
                         </div>
                     ) : tab === 'Settings' ? (
@@ -365,7 +522,7 @@
                                     onKeyDown={handleSetKeyDown}
                                     placeholder="New Set Name" 
                                 />
-                                <button className="add-button" onClick={addSet}>Add</button>
+                                <button className="add-item-button" onClick={addSet}>Add</button>
                             </div>
                             <ul>
                                 {sets.map(s => (
@@ -384,7 +541,7 @@
                                     onKeyDown={handleReceiverKeyDown}
                                     placeholder="New Receiver Name" 
                                 />
-                                <button className="add-button" onClick={addReceiver}>Add</button>
+                                <button className="add-item-button" onClick={addReceiver}>Add</button>
                             </div>
                             <ul>
                                 {receivers.map(r => (
@@ -398,9 +555,33 @@
                     ) : (
                         <ul className="order-list">
                             {filteredOrders.map(order => (
-                                <li key={order.id}>
-                                    {order.item} (Qty: {order.quantity}) for {order.recipient}
-                                    {tab === 'Incoming' && <button className="status-button" onClick={() => updateStatus(order.id, 'received')}>Mark Received</button>}
+                                <li key={order.id} className="order-item">
+                                    <div className="order-summary">
+                                        <span>Order #{order.orderNumber} for {order.recipient}</span>
+                                        <button className="expand-button" onClick={() => toggleExpand(order.id)}>
+                                            {expandedOrders[order.id] ? 'Collapse' : 'Expand'}
+                                        </button>
+                                    </div>
+                                    {expandedOrders[order.id] && (
+                                        <div className="details">
+                                            <p><strong>Items:</strong></p>
+                                            <ul>
+                                                {order.items.map((it, idx) => (
+                                                    <li key={idx}>{it.item} (Set: {it.set})</li>
+                                                ))}
+                                            </ul>
+                                            <p><strong>Description:</strong> {order.description}</p>
+                                            <p><strong>Type:</strong> {order.type}</p>
+                                            {order.type === 'pickup' ? (
+                                                <p><strong>Pickup Date:</strong> {order.pickupDate}</p>
+                                            ) : (
+                                                <p><strong>Delivery Dates:</strong> {order.deliveryStartDate} to {order.deliveryEndDate}</p>
+                                            )}
+                                            <p><strong>Store/Shipper:</strong> {order.store}</p>
+                                            {order.receivedBy && <p><strong>Received By:</strong> {order.receivedBy}</p>}
+                                        </div>
+                                    )}
+                                    {tab === 'Incoming' && <button className="status-button" onClick={() => markReceived(order.id)}>Received By</button>}
                                     {tab === 'Received' && <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>}
                                 </li>
                             ))}

@@ -183,6 +183,25 @@
             padding: 10px 20px;
             background-color: #34c759;
         }
+        .archive-all {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .archive-all label {
+            margin-right: 10px;
+        }
+        .archive-all select {
+            flex: 1;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+        }
+        .filter-group input {
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -223,6 +242,10 @@
             const [expandedOrders, setExpandedOrders] = useState({});
             const [receivingOrderId, setReceivingOrderId] = useState(null);
             const [receivedByName, setReceivedByName] = useState('');
+            const [archiveSet, setArchiveSet] = useState('');
+            const [filterSet, setFilterSet] = useState('');
+            const [filterItem, setFilterItem] = useState('');
+            const [filterDescription, setFilterDescription] = useState('');
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -434,11 +457,24 @@
                 }
             };
 
+            const handleArchiveAll = async () => {
+                if (archiveSet) {
+                    await archiveOrdersWithSet(archiveSet);
+                    setArchiveSet('');
+                }
+            };
+
             const filteredOrders = orders.filter(order => {
                 if (tab === 'Incoming') return order.status === 'ordered';
                 if (tab === 'Received') return order.status === 'received';
                 if (tab === 'Archived') return order.status === 'archived';
                 return false;
+            }).filter(order => {
+                if (tab !== 'Received' && tab !== 'Archived') return true;
+                const matchesSet = !filterSet || (order.items && order.items.some(item => item.set.toLowerCase().includes(filterSet.toLowerCase())));
+                const matchesItem = !filterItem || (order.items && order.items.some(item => item.item.toLowerCase().includes(filterItem.toLowerCase())));
+                const matchesDescription = !filterDescription || (order.description && order.description.toLowerCase().includes(filterDescription.toLowerCase()));
+                return matchesSet && matchesItem && matchesDescription;
             });
 
             if (loading) {
@@ -598,58 +634,89 @@
                             </ul>
                         </div>
                     ) : (
-                        <ul className="order-list">
-                            {filteredOrders.map(order => (
-                                <li key={order.id} className="order-item">
-                                    <div className="order-summary">
-                                        <span>Order #{order.orderNumber} for {order.recipient}</span>
-                                        <button className="expand-button" onClick={() => toggleExpand(order.id)}>
-                                            {expandedOrders[order.id] ? 'Collapse' : 'Expand'}
-                                        </button>
-                                    </div>
-                                    {expandedOrders[order.id] && (
-                                        <div className="details">
-                                            <p><strong>Items:</strong></p>
-                                            <ul>
-                                                {order.items.map((it, idx) => (
-                                                    <li key={idx}>{it.item} (Set: {it.set})</li>
-                                                ))}
-                                            </ul>
-                                            <p><strong>Description:</strong> {order.description}</p>
-                                            <p><strong>Type:</strong> {order.type}</p>
-                                            {order.type === 'pickup' ? (
-                                                <p><strong>Pickup Date:</strong> {order.pickupDate}</p>
-                                            ) : (
-                                                <p><strong>Delivery Dates:</strong> {order.deliveryStartDate} to {order.deliveryEndDate}</p>
-                                            )}
-                                            <p><strong>Store/Shipper:</strong> {order.store}</p>
-                                            {order.receivedBy && <p><strong>Received By:</strong> {order.receivedBy}</p>}
+                        <div>
+                            {(tab === 'Received' || tab === 'Archived') && (
+                                <div className="filter-group">
+                                    <input 
+                                        value={filterSet} 
+                                        onChange={e => setFilterSet(e.target.value)} 
+                                        placeholder="Filter by Set" 
+                                    />
+                                    <input 
+                                        value={filterItem} 
+                                        onChange={e => setFilterItem(e.target.value)} 
+                                        placeholder="Filter by Item Name" 
+                                    />
+                                    <input 
+                                        value={filterDescription} 
+                                        onChange={e => setFilterDescription(e.target.value)} 
+                                        placeholder="Filter by Description" 
+                                    />
+                                </div>
+                            )}
+                            {tab === 'Received' && (
+                                <div className="archive-all">
+                                    <label>Archive All:</label>
+                                    <select value={archiveSet} onChange={e => setArchiveSet(e.target.value)}>
+                                        <option value="">Select Set</option>
+                                        {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                    <button className="archive-button" style={{width: 'auto', marginLeft: '10px'}} onClick={handleArchiveAll}>Archive</button>
+                                </div>
+                            )}
+                            <ul className="order-list">
+                                {filteredOrders.map(order => (
+                                    <li key={order.id} className="order-item">
+                                        <div className="order-summary">
+                                            <span>Order #{order.orderNumber} for {order.recipient}</span>
+                                            <button className="expand-button" onClick={() => toggleExpand(order.id)}>
+                                                {expandedOrders[order.id] ? 'Collapse' : 'Expand'}
+                                            </button>
                                         </div>
-                                    )}
-                                    {tab === 'Incoming' && (
-                                        <>
-                                            <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
-                                            {receivingOrderId === order.id && (
-                                                <div className="receive-dropdown">
-                                                    <select value={receivedByName} onChange={e => setReceivedByName(e.target.value)}>
-                                                        <option value="">Select Receiver</option>
-                                                        {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-                                                    </select>
-                                                    <button onClick={() => confirmReceived(order.id)}>Confirm</button>
-                                                </div>
-                                            )}
-                                        </>
-                                    )}
-                                    {tab === 'Received' && (
-                                        <>
-                                            <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>
-                                            <button className="undo-button" onClick={() => updateStatus(order.id, 'ordered')}>Undo</button>
-                                        </>
-                                    )}
-                                    {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
-                                </li>
-                            ))}
-                        </ul>
+                                        {expandedOrders[order.id] && (
+                                            <div className="details">
+                                                <p><strong>Items:</strong></p>
+                                                <ul>
+                                                    {order.items.map((it, idx) => (
+                                                        <li key={idx}>{it.item} (Set: {it.set})</li>
+                                                    ))}
+                                                </ul>
+                                                <p><strong>Description:</strong> {order.description}</p>
+                                                <p><strong>Type:</strong> {order.type}</p>
+                                                {order.type === 'pickup' ? (
+                                                    <p><strong>Pickup Date:</strong> {order.pickupDate}</p>
+                                                ) : (
+                                                    <p><strong>Delivery Dates:</strong> {order.deliveryStartDate} to {order.deliveryEndDate}</p>
+                                                )}
+                                                <p><strong>Store/Shipper:</strong> {order.store}</p>
+                                                {order.receivedBy && <p><strong>Received By:</strong> {order.receivedBy}</p>}
+                                            </div>
+                                        )}
+                                        {tab === 'Incoming' && (
+                                            <>
+                                                <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
+                                                {receivingOrderId === order.id && (
+                                                    <div className="receive-dropdown">
+                                                        <select value={receivedByName} onChange={e => setReceivedByName(e.target.value)}>
+                                                            <option value="">Select Receiver</option>
+                                                            {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                                        </select>
+                                                        <button onClick={() => confirmReceived(order.id)}>Confirm</button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                        {tab === 'Received' && (
+                                            <>
+                                                <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>
+                                                <button className="undo-button" onClick={() => updateStatus(order.id, 'ordered')}>Undo</button>
+                                            </>
+                                        )}
+                                        {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     )}
                 </div>
             );

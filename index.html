@@ -71,6 +71,9 @@
             flex: 1;
             margin-right: 10px;
         }
+        input[type="file"] {
+            padding: 5px;
+        }
         input, select, textarea {
             width: 100%;
             padding: 10px;
@@ -113,7 +116,7 @@
             padding: 10px;
             margin-left: 10px;
         }
-        .print-all-button {
+        .print-set-button {
             background-color: #ff9500;
             padding: 10px 20px;
             margin-bottom: 20px;
@@ -135,6 +138,10 @@
         .order-details {
             font-size: 14px;
             color: #6e6e73;
+        }
+        .item-image {
+            max-width: 100px;
+            margin-top: 10px;
         }
         .expand-button {
             background-color: #007aff;
@@ -253,13 +260,11 @@
     <!-- jsPDF CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- EmailJS CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
     <!-- Firebase Compat CDNs for namespaced API -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-storage-compat.js"></script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -272,7 +277,7 @@
             const [receivers, setReceivers] = useState([]);
             const [newSetName, setNewSetName] = useState('');
             const [newReceiverName, setNewReceiverName] = useState('');
-            const [items, setItems] = useState([{ item: '', set: '' }]);
+            const [items, setItems] = useState([{ item: '', set: '', imageFile: null, imageUrl: '' }]);
             const [description, setDescription] = useState('');
             const [orderNumber, setOrderNumber] = useState('');
             const [orderType, setOrderType] = useState('pickup');
@@ -291,11 +296,9 @@
             const [filterItem, setFilterItem] = useState('');
             const [filterDescription, setFilterDescription] = useState('');
             const [sortOption, setSortOption] = useState('date_desc');
+            const [printSet, setPrintSet] = useState('');
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
-            const emailjsServiceId = 'service_bg5walm'; // Your service ID
-            const emailjsTemplateId = 'YOUR_EMAILJS_TEMPLATE_ID'; // Replace with your template ID after creation
-            const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Your public key
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -312,9 +315,9 @@
 
             const auth = firebase.auth();
             const db = firebase.firestore();
+            const storage = firebase.storage();
 
             useEffect(() => {
-                emailjs.init(emailjsPublicKey); // Initialize EmailJS with your public key
                 const handleAuth = () => {
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
@@ -361,8 +364,14 @@
                 }
             }, [user]);
 
+            const handleImageChange = (index, file) => {
+                const newItems = [...items];
+                newItems[index].imageFile = file;
+                setItems(newItems);
+            };
+
             const addItemRow = () => {
-                setItems([...items, { item: '', set: '' }]);
+                setItems([...items, { item: '', set: '', imageFile: null, imageUrl: '' }]);
             };
 
             const removeItemRow = (index) => {
@@ -376,7 +385,52 @@
                 setItems(newItems);
             };
 
-            const generatePDFBase64 = (orderData) => {
+            const handleOrder = async () => {
+                try {
+                    const uploadedItems = await Promise.all(items.map(async (it) => {
+                        let imageUrl = '';
+                        if (it.imageFile) {
+                            const storageRef = storage.ref(`images/${user.uid}/${it.imageFile.name}`);
+                            await storageRef.put(it.imageFile);
+                            imageUrl = await storageRef.getDownloadURL();
+                        }
+                        return { item: it.item, set: it.set, imageUrl };
+                    }));
+                    const orderData = {
+                        items: uploadedItems,
+                        description,
+                        orderNumber,
+                        type: orderType,
+                        store,
+                        recipient,
+                        orderedBy: user.uid,
+                        status: 'ordered',
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    if (orderType === 'pickup') {
+                        orderData.pickupDate = pickupDate;
+                    } else {
+                        orderData.deliveryStartDate = deliveryStartDate;
+                        orderData.deliveryEndDate = deliveryEndDate;
+                    }
+                    const docRef = await db.collection('orders').add(orderData);
+                    generatePDF(orderData); // Auto-print
+                    // Reset form
+                    setItems([{ item: '', set: '', imageFile: null, imageUrl: '' }]);
+                    setDescription('');
+                    setOrderNumber('');
+                    setOrderType('pickup');
+                    setPickupDate('');
+                    setDeliveryStartDate('');
+                    setDeliveryEndDate('');
+                    setStore('');
+                    setRecipient('');
+                } catch (err) {
+                    setError('Failed to place order: ' + err.message);
+                }
+            };
+
+            const generatePDF = (orderData) => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 doc.setFontSize(18);
@@ -400,50 +454,79 @@
                 doc.text('Description:', 20, y);
                 doc.setFontSize(10);
                 doc.text(orderData.description, 20, y + 10, { maxWidth: 160 });
-                return doc.output('datauristring').split(',')[1]; // Base64
+                doc.autoPrint({variant: 'non-conform'});
+                const blobUrl = doc.output('bloburl');
+                const printWindow = window.open(blobUrl);
+                printWindow.print();
             };
 
-            const handleOrder = async () => {
-                try {
-                    const orderData = {
-                        items,
-                        description,
-                        orderNumber,
-                        type: orderType,
-                        store,
-                        recipient,
-                        orderedBy: user.uid,
-                        status: 'ordered',
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    };
-                    if (orderType === 'pickup') {
-                        orderData.pickupDate = pickupDate;
-                    } else {
-                        orderData.deliveryStartDate = deliveryStartDate;
-                        orderData.deliveryEndDate = deliveryEndDate;
-                    }
-                    const docRef = await db.collection('orders').add(orderData);
-                    const pdfBase64 = generatePDFBase64(orderData);
-                    // Send email with EmailJS
-                    await emailjs.send(emailjsServiceId, emailjsTemplateId, {
-                        subject: `Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`,
-                        body: `Summary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}`,
-                        pdf_content: pdfBase64,
-                        pdf_filename: `order_${orderNumber}.pdf`
+            const printSetOrders = (setName) => {
+                const setOrders = orders.filter(order => order.items.some(it => it.set === setName));
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                let y = 20;
+                doc.setFontSize(18);
+                doc.text(`Orders for Set: ${setName}`, 20, y);
+                y += 10;
+                setOrders.forEach((order, index) => {
+                    doc.setFontSize(14);
+                    doc.text(`Order #${order.orderNumber}`, 20, y);
+                    y += 10;
+                    doc.setFontSize(12);
+                    doc.text(`Recipient: ${order.recipient}`, 20, y);
+                    y += 10;
+                    doc.text('Items:', 20, y);
+                    y += 10;
+                    order.items.forEach((it, idx) => {
+                        doc.text(`${idx + 1}. ${it.item} (Set: ${it.set})`, 20, y);
+                        y += 10;
                     });
-                    // Reset form
-                    setItems([{ item: '', set: '' }]);
-                    setDescription('');
-                    setOrderNumber('');
-                    setOrderType('pickup');
-                    setPickupDate('');
-                    setDeliveryStartDate('');
-                    setDeliveryEndDate('');
-                    setStore('');
-                    setRecipient('');
-                } catch (err) {
-                    setError('Failed to place order: ' + err.message);
+                    doc.text(`Description: ${order.description}`, 20, y);
+                    y += 10;
+                    doc.text(`Type: ${order.type}`, 20, y);
+                    y += 10;
+                    if (order.type === 'pickup') {
+                        doc.text(`Pickup Date: ${order.pickupDate}`, 20, y);
+                    } else {
+                        doc.text(`Delivery Dates: ${order.deliveryStartDate} to ${order.deliveryEndDate}`, 20, y);
+                    }
+                    y += 10;
+                    doc.text(`Store/Shipper: ${order.store}`, 20, y);
+                    y += 10;
+                    if (order.receivedBy) {
+                        doc.text(`Received By: ${order.receivedBy}`, 20, y);
+                        y += 10;
+                    }
+                    if (order.receivedTimestamp) {
+                        doc.text(`Received On: ${new Date(order.receivedTimestamp.seconds * 1000).toLocaleString()}`, 20, y);
+                        y += 10;
+                    }
+                    if (index < setOrders.length - 1) {
+                        doc.addPage();
+                        y = 20;
+                    }
+                });
+                doc.autoPrint({variant: 'non-conform'});
+                const blobUrl = doc.output('bloburl');
+                const printWindow = window.open(blobUrl);
+                printWindow.print();
+            };
+
+            const printIndividualItem = (item) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                doc.setFontSize(18);
+                doc.text('Individual Item Details', 20, 20);
+                doc.setFontSize(12);
+                doc.text(`Item: ${item.item}`, 20, 35);
+                doc.text(`Set: ${item.set}`, 20, 45);
+                if (item.imageUrl) {
+                    doc.addImage(item.imageUrl, 'JPEG', 20, 55, 100, 100); // Assume JPEG, adjust as needed
                 }
+                doc.autoPrint({variant: 'non-conform'});
+                const blobUrl = doc.output('bloburl');
+                const printWindow = window.open(blobUrl);
+                printWindow.print();
             };
 
             const updateStatus = async (id, newStatus) => {
@@ -578,6 +661,10 @@
                     order.items.forEach((it, idx) => {
                         doc.text(`${idx + 1}. ${it.item} (Set: ${it.set})`, 20, y);
                         y += 10;
+                        if (it.imageUrl) {
+                            doc.addImage(it.imageUrl, 'JPEG', 20, y, 50, 50); // Smaller image in PDF
+                            y += 60;
+                        }
                     });
                     doc.text(`Description: ${order.description}`, 20, y);
                     y += 10;
@@ -604,6 +691,82 @@
                         y = 20;
                     }
                 });
+                doc.autoPrint({variant: 'non-conform'});
+                const blobUrl = doc.output('bloburl');
+                const printWindow = window.open(blobUrl);
+                printWindow.print();
+            };
+
+            const printSetGroup = async () => {
+                if (printSet) {
+                    const setOrders = orders.filter(order => order.items.some(it => it.set === printSet));
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    let y = 20;
+                    doc.setFontSize(18);
+                    doc.text(`Orders for Set: ${printSet}`, 20, y);
+                    y += 10;
+                    setOrders.forEach((order, index) => {
+                        doc.setFontSize(14);
+                        doc.text(`Order #${order.orderNumber}`, 20, y);
+                        y += 10;
+                        doc.setFontSize(12);
+                        doc.text(`Recipient: ${order.recipient}`, 20, y);
+                        y += 10;
+                        doc.text('Items:', 20, y);
+                        y += 10;
+                        order.items.forEach((it, idx) => {
+                            doc.text(`${idx + 1}. ${it.item} (Set: ${it.set})`, 20, y);
+                            y += 10;
+                            if (it.imageUrl) {
+                                doc.addImage(it.imageUrl, 'JPEG', 20, y, 50, 50);
+                                y += 60;
+                            }
+                        });
+                        doc.text(`Description: ${order.description}`, 20, y);
+                        y += 10;
+                        doc.text(`Type: ${order.type}`, 20, y);
+                        y += 10;
+                        if (order.type === 'pickup') {
+                            doc.text(`Pickup Date: ${order.pickupDate}`, 20, y);
+                        } else {
+                            doc.text(`Delivery Dates: ${order.deliveryStartDate} to ${order.deliveryEndDate}`, 20, y);
+                        }
+                        y += 10;
+                        doc.text(`Store/Shipper: ${order.store}`, 20, y);
+                        y += 10;
+                        if (order.receivedBy) {
+                            doc.text(`Received By: ${order.receivedBy}`, 20, y);
+                            y += 10;
+                        }
+                        if (order.receivedTimestamp) {
+                            doc.text(`Received On: ${new Date(order.receivedTimestamp.seconds * 1000).toLocaleString()}`, 20, y);
+                            y += 10;
+                        }
+                        if (index < setOrders.length - 1) {
+                            doc.addPage();
+                            y = 20;
+                        }
+                    });
+                    doc.autoPrint({variant: 'non-conform'});
+                    const blobUrl = doc.output('bloburl');
+                    const printWindow = window.open(blobUrl);
+                    printWindow.print();
+                    setPrintSet('');
+                }
+            };
+
+            const printIndividualItem = (item) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                doc.setFontSize(18);
+                doc.text('Individual Item Details', 20, 20);
+                doc.setFontSize(12);
+                doc.text(`Item: ${item.item}`, 20, 35);
+                doc.text(`Set: ${item.set}`, 20, 45);
+                if (item.imageUrl) {
+                    doc.addImage(item.imageUrl, 'JPEG', 20, 55, 100, 100);
+                }
                 doc.autoPrint({variant: 'non-conform'});
                 const blobUrl = doc.output('bloburl');
                 const printWindow = window.open(blobUrl);
@@ -668,6 +831,7 @@
                                         <option value="">Select Set</option>
                                         {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
+                                    <input type="file" onChange={e => handleImageChange(index, e.target.files[0])} />
                                     {index > 0 && <button className="remove-item-button" onClick={() => removeItemRow(index)}>Remove</button>}
                                 </div>
                             ))}
@@ -692,7 +856,7 @@
                                         value="pickup" 
                                         checked={orderType === 'pickup'} 
                                         onChange={e => setOrderType(e.target.value)} 
-                                    />
+                                        />
                                     Pickup
                                 </label>
                                 <label>
@@ -701,7 +865,7 @@
                                         value="delivery" 
                                         checked={orderType === 'delivery'} 
                                         onChange={e => setOrderType(e.target.value)} 
-                                    />
+                                        />
                                     Delivery
                                 </label>
                             </div>
@@ -824,6 +988,16 @@
                                     </div>
                                 </>
                             )}
+                            {(tab === 'Received' || tab === 'Archived') && (
+                                <div className="archive-all">
+                                    <label>Print Set:</label>
+                                    <select value={printSet} onChange={e => setPrintSet(e.target.value)}>
+                                        <option value="">Select Set</option>
+                                        {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                    <button className="print-set-button" style={{width: 'auto', marginLeft: '10px'}} onClick={printSetGroup}>Print Group</button>
+                                </div>
+                            )}
                             {filteredOrders.length === 0 && <p className="no-orders">No orders in this tab.</p>}
                             <ul className="order-list">
                                 {filteredOrders.map(order => (
@@ -877,7 +1051,11 @@
                                 <p><strong>Items:</strong></p>
                                 <ul>
                                     {selectedOrder.items ? selectedOrder.items.map((it, idx) => (
-                                        <li key={idx}>{it.item} (Set: {it.set})</li>
+                                        <li key={idx}>
+                                            {it.item} (Set: {it.set})
+                                            {it.imageUrl && <img src={it.imageUrl} alt="Item Image" className="item-image" />}
+                                            <button onClick={() => printIndividualItem(it)}>Print Item</button>
+                                        </li>
                                     )) : 'No items'}
                                 </ul>
                                 <p><strong>Description:</strong> {selectedOrder.description}</p>

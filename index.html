@@ -1,316 +1,253 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hardware Tracking</title>
-  <script id="firebase-app" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script id="firebase-firestore" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <style>
-    body { 
-      font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif; 
-      margin: 0; 
-      background-color: #f7f7f7; 
-    }
-    .dark body { background-color: #1a1a1a; }
-    .header { 
-      position: fixed; 
-      top: 0; 
-      left: 0; 
-      right: 0; 
-      background-color: #ffffff; 
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-      z-index: 10; 
-    }
-    .dark .header { background-color: #2d2d2d; }
-    .header-content { 
-      max-width: 1200px; 
-      margin: 0 auto; 
-      padding: 16px; 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-    }
-    .header h1 { 
-      font-size: 24px; 
-      font-weight: bold; 
-      color: #1a1a1a; 
-      margin: 0; 
-    }
-    .dark .header h1 { color: #ffffff; }
-    .toggle-button { 
-      background-color: #e5e5e5; 
-      color: #1a1a1a; 
-      padding: 6px 12px; 
-      border-radius: 20px; 
-      border: none; 
-      font-size: 14px; 
-      cursor: pointer; 
-    }
-    .dark .toggle-button { 
-      background-color: #4a4a4a; 
-      color: #ffffff; 
-    }
-    .nav { 
-      max-width: 1200px; 
-      margin: 0 auto; 
-      padding: 0 16px 16px; 
-    }
-    .tabs { display: flex; gap: 16px; }
-    .tab { 
-      padding: 8px 16px; 
-      border-radius: 8px; 
-      font-size: 14px; 
-      font-weight: 500; 
-      color: #4a4a4a; 
-      cursor: pointer; 
-      transition: background-color 0.3s, color 0.3s; 
-    }
-    .dark .tab { color: #d1d1d1; }
-    .tab:hover { background-color: rgba(0,0,0,0.05); }
-    .dark .tab:hover { background-color: rgba(255,255,255,0.1); }
-    .tab-active { 
-      background-color: #007aff; 
-      color: #ffffff; 
-    }
-    .content { 
-      max-width: 1200px; 
-      margin: 128px auto 24px; 
-      padding: 16px; 
-      animation: fadeIn 0.3s ease-in; 
-    }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .error { color: #ff3b30; text-align: center; font-size: 16px; }
-    .loading { color: #007aff; text-align: center; font-size: 16px; }
-    .form-container { 
-      background-color: #ffffff; 
-      padding: 24px; 
-      border-radius: 12px; 
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
-      max-width: 600px; 
-      margin: 0 auto; 
-    }
-    .dark .form-container { 
-      background-color: #2d2d2d; 
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3); 
-    }
-    .form-container input { 
-      width: 100%; 
-      padding: 10px; 
-      margin-bottom: 16px; 
-      border: 1px solid #d1d1d1; 
-      border-radius: 8px; 
-      font-size: 14px; 
-    }
-    .dark .form-container input { 
-      background-color: #4a4a4a; 
-      color: #ffffff; 
-      border-color: #6b6b6b; 
-    }
-    .form-container button { 
-      background-color: #007aff; 
-      color: #ffffff; 
-      padding: 10px 20px; 
-      border: none; 
-      border-radius: 8px; 
-      font-size: 14px; 
-      cursor: pointer; 
-      width: 100%; 
-    }
-    .form-container button:disabled { 
-      background-color: #cccccc; 
-      cursor: not-allowed; 
-    }
-    .success { color: #34c759; text-align: center; font-size: 14px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardware Tracker</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f7;
+            margin: 0;
+            padding: 0;
+            color: #1d1d1f;
+        }
+        #root {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .tabs {
+            display: flex;
+            justify-content: space-around;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 500;
+            color: #007aff;
+            transition: background-color 0.3s;
+        }
+        .tab.active {
+            background-color: #007aff;
+            color: #ffffff;
+        }
+        .form, .order-list {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #d2d2d7;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #007aff;
+            color: #ffffff;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .status-button {
+            background-color: #34c759;
+            margin-top: 10px;
+        }
+        .archive-button {
+            background-color: #ff9500;
+        }
+        .error {
+            color: #ff3b30;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-  <div id="root"></div>
-  <div id="error" class="error"></div>
-  <script>
-    // Dependency Loading Status
-    window.appStatus = { firebase: { loaded: false, error: null } };
-    let currentTab = 'incoming';
+    <div id="root"></div>
 
-    // Firebase Initialization
-    function initializeFirebase(attempts = 0, maxAttempts = 30) {
-      const errorDiv = document.getElementById('error');
-      if (typeof firebase === 'undefined') {
-        if (attempts >= maxAttempts) {
-          console.error("Firebase failed to load after", maxAttempts, "attempts.");
-          window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase. Check your network or try again." };
-          errorDiv.innerText = window.appStatus.firebase.error;
-          renderUI();
-          return;
-        }
-        console.warn("Firebase not loaded yet. Retrying in 100ms... (Attempt", attempts + 1, ")");
-        errorDiv.innerText = "Loading Firebase... (Attempt " + (attempts + 1) + ")";
-        setTimeout(() => initializeFirebase(attempts + 1, maxAttempts), 100);
-        return;
-      }
-      try {
-        const firebaseConfig = {
-          apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
-          authDomain: "set-hardware.firebaseapp.com",
-          projectId: "set-hardware",
-          storageBucket: "set-hardware.firebasestorage.app",
-          messagingSenderId: "613195230835",
-          appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
+    <!-- React and Babel CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase Compat CDNs for namespaced API -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-firestore-compat.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [tab, setTab] = useState('Incoming');
+            const [orders, setOrders] = useState([]);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [item, setItem] = useState('');
+            const [quantity, setQuantity] = useState(1);
+            const [recipient, setRecipient] = useState('');
+            const [error, setError] = useState('');
+
+            const firebaseConfig = {
+                apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
+                authDomain: "set-hardware.firebaseapp.com",
+                projectId: "set-hardware",
+                storageBucket: "set-hardware.firebasestorage.app",
+                messagingSenderId: "613195230835",
+                appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
+            };
+
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+
+            const auth = firebase.auth();
+            const db = firebase.firestore();
+
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged(setUser);
+                return unsubscribe;
+            }, []);
+
+            useEffect(() => {
+                if (user) {
+                    const unsubscribe = db.collection('orders').onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setOrders(data);
+                    });
+                    return unsubscribe;
+                }
+            }, [user]);
+
+            const handleAuth = (action) => {
+                setError('');
+                if (action === 'signup') {
+                    auth.createUserWithEmailAndPassword(email, password).catch(err => setError(err.message));
+                } else {
+                    auth.signInWithEmailAndPassword(email, password).catch(err => setError(err.message));
+                }
+            };
+
+            const handleLogout = () => {
+                auth.signOut();
+            };
+
+            const handleOrder = () => {
+                db.collection('orders').add({
+                    item,
+                    quantity,
+                    recipient,
+                    orderedBy: user.uid,
+                    status: 'ordered',
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                setItem('');
+                setQuantity(1);
+                setRecipient('');
+            };
+
+            const updateStatus = (id, newStatus) => {
+                db.collection('orders').doc(id).update({ status: newStatus });
+            };
+
+            const filteredOrders = orders.filter(order => {
+                if (tab === 'Incoming') return order.status === 'ordered';
+                if (tab === 'Received') return order.status === 'received';
+                if (tab === 'Archived') return order.status === 'archived';
+                return false;
+            });
+
+            if (!user) {
+                return (
+                    <div className="form">
+                        <h1>Login / Sign Up</h1>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" />
+                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
+                        <button onClick={() => handleAuth('login')}>Login</button>
+                        <button onClick={() => handleAuth('signup')}>Sign Up</button>
+                        {error && <p className="error">{error}</p>}
+                    </div>
+                );
+            }
+
+            return (
+                <div>
+                    <h1>Hardware Tracker</h1>
+                    <div className="tabs">
+                        {['Incoming', 'Received', 'Archived', 'Order', 'Settings'].map(t => (
+                            <div
+                                key={t}
+                                className={`tab ${tab === t ? 'active' : ''}`}
+                                onClick={() => setTab(t)}
+                            >
+                                {t}
+                            </div>
+                        ))}
+                    </div>
+                    {tab === 'Order' ? (
+                        <div className="form">
+                            <input value={item} onChange={e => setItem(e.target.value)} placeholder="Item" />
+                            <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} />
+                            <input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="Recipient" />
+                            <button onClick={handleOrder}>Place Order</button>
+                        </div>
+                    ) : tab === 'Settings' ? (
+                        <div className="form">
+                            <button onClick={handleLogout}>Logout</button>
+                        </div>
+                    ) : (
+                        <ul className="order-list">
+                            {filteredOrders.map(order => (
+                                <li key={order.id}>
+                                    {order.item} (Qty: {order.quantity}) for {order.recipient}
+                                    {tab === 'Incoming' && <button className="status-button" onClick={() => updateStatus(order.id, 'received')}>Mark Received</button>}
+                                    {tab === 'Received' && <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            );
         };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        window.firebase = {
-          db: db,
-          collection: firebase.firestore.collection,
-          addDoc: (collectionRef, data) => collectionRef.add(data),
-          getDocs: (collectionRef) => collectionRef.get(),
-          updateDoc: (docRef, data) => docRef.update(data),
-          doc: firebase.firestore.doc
-        };
-        // Test Firestore connectivity
-        db.collection('test').doc('test').set({ timestamp: new Date().toISOString() })
-          .then(() => {
-            console.log("Firestore test write successful");
-            window.appStatus.firebase = { loaded: true, error: null };
-            errorDiv.innerText = '';
-            renderUI();
-          })
-          .catch(error => {
-            console.error("Firestore test write failed:", error);
-            window.appStatus.firebase = { loaded: false, error: "Firestore test failed: " + error.message };
-            errorDiv.innerText = window.appStatus.firebase.error;
-            renderUI();
-          });
-      } catch (error) {
-        console.error("Firebase initialization failed:", error);
-        window.appStatus.firebase = { loaded: false, error: "Firebase initialization failed: " + error.message };
-        errorDiv.innerText = window.appStatus.firebase.error;
-        renderUI();
-      }
-    }
 
-    // Render UI
-    function renderUI() {
-      const root = document.getElementById('root');
-      const errorDiv = document.getElementById('error');
-      if (!window.appStatus.firebase.loaded && !errorDiv.innerText) {
-        errorDiv.innerText = window.appStatus.firebase.error || 'Loading Firebase...';
-      }
-
-      root.innerHTML = `
-        <div class="header">
-          <div class="header-content">
-            <h1>Hardware Tracking</h1>
-            <button class="toggle-button" onclick="document.documentElement.className = document.documentElement.className === 'dark' ? '' : 'dark'">Toggle Dark Mode</button>
-          </div>
-          <nav class="nav">
-            <div class="tabs">
-              <button class="tab ${currentTab === 'incoming' ? 'tab-active' : ''}" onclick="setTab('incoming')">Incoming</button>
-              <button class="tab ${currentTab === 'received' ? 'tab-active' : ''}" onclick="setTab('received')">Received</button>
-              <button class="tab ${currentTab === 'archived' ? 'tab-active' : ''}" onclick="setTab('archived')">Archived</button>
-              <button class="tab ${currentTab === 'options' ? 'tab-active' : ''}" onclick="setTab('options')">Options</button>
-            </div>
-          </nav>
-        </div>
-        <div class="content">
-          ${window.appStatus.firebase.loaded ? `
-            ${currentTab === 'incoming' ? '<p>Incoming items will be displayed here.</p>' : ''}
-            ${currentTab === 'received' ? '<p>Received items will be displayed here.</p>' : ''}
-            ${currentTab === 'archived' ? '<p>Archived sets will be displayed here.</p>' : ''}
-            ${currentTab === 'options' ? `
-              <div class="form-container">
-                <h2 style="font-size: 18px; font-weight: 500; margin-bottom: 16px; color: ${document.documentElement.className === 'dark' ? '#ffffff' : '#1a1a1a'};">Add New Order</h2>
-                <input type="text" id="description" placeholder="Description (e.g., LED Panel)" ${window.appStatus.firebase.error ? 'disabled' : ''}>
-                <input type="text" id="receiver" placeholder="Receiver's Name" ${window.appStatus.firebase.error ? 'disabled' : ''}>
-                <button onclick="addOrder()" ${window.appStatus.firebase.error ? 'disabled' : ''}>Add Order</button>
-                <p id="form-message" class="success"></p>
-              </div>
-            ` : ''}
-          ` : `<p class="error">${window.appStatus.firebase.error || 'Loading Firebase...'}</p>`}
-        </div>
-      `;
-    }
-
-    // Tab Switching
-    function setTab(tab) {
-      currentTab = tab;
-      const messageDiv = document.getElementById('form-message');
-      if (messageDiv) messageDiv.innerText = '';
-      renderUI();
-    }
-
-    // Add Order
-    function addOrder() {
-      const descriptionInput = document.getElementById('description');
-      const receiverInput = document.getElementById('receiver');
-      const messageDiv = document.getElementById('form-message');
-      const description = descriptionInput.value.trim();
-      const receiver = receiverInput.value.trim();
-
-      if (!description || !receiver) {
-        messageDiv.innerText = 'Please enter both description and receiver\'s name.';
-        messageDiv.className = 'error';
-        return;
-      }
-
-      if (window.appStatus.firebase.error) {
-        messageDiv.innerText = window.appStatus.firebase.error;
-        messageDiv.className = 'error';
-        return;
-      }
-
-      const newItem = {
-        id: 'H' + Math.floor(1000 + Math.random() * 9000),
-        description,
-        receiver,
-        status: 'Incoming',
-        timestamp: new Date().toLocaleString()
-      };
-
-      window.firebase.db.collection('items').doc(newItem.id).set(newItem)
-        .then(() => {
-          console.log("Order added successfully:", newItem);
-          messageDiv.innerText = 'Order added successfully!';
-          messageDiv.className = 'success';
-          descriptionInput.value = '';
-          receiverInput.value = '';
-        })
-        .catch(error => {
-          console.error("Error adding order:", error);
-          messageDiv.innerText = 'Failed to add order: ' + error.message;
-          messageDiv.className = 'error';
-        });
-    }
-
-    // Script Load Handlers
-    const firebaseAppScript = document.getElementById('firebase-app');
-    const firebaseFirestoreScript = document.getElementById('firebase-firestore');
-    let firebaseScriptsLoaded = 0;
-    function checkFirebaseLoaded() {
-      firebaseScriptsLoaded++;
-      console.log("Firebase script loaded, count:", firebaseScriptsLoaded);
-      if (firebaseScriptsLoaded === 2) {
-        initializeFirebase();
-      }
-    }
-
-    firebaseAppScript.onload = checkFirebaseLoaded;
-    firebaseAppScript.onerror = () => {
-      console.error("Failed to load Firebase App script.");
-      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase App script." };
-      document.getElementById('error').innerText = window.appStatus.firebase.error;
-      renderUI();
-    };
-    firebaseFirestoreScript.onload = checkFirebaseLoaded;
-    firebaseFirestoreScript.onerror = () => {
-      console.error("Failed to load Firebase Firestore script.");
-      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase Firestore script." };
-      document.getElementById('error').innerText = window.appStatus.firebase.error;
-      renderUI();
-    };
-
-    // Initial Render
-    renderUI();
-  </script>
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
 </body>
 </html>

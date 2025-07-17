@@ -6,7 +6,6 @@
   <title>Movie Hardware Order App</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
     import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -19,7 +18,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel">
+  <script type="text/javascript">
     const { useState, useEffect } = React;
     const { jsPDF } = window.jspdf;
     const firebaseConfig = {
@@ -39,6 +38,7 @@
       firebaseInitialized = true;
     } catch (error) {
       console.error('Firebase initialization error:', error.message);
+      document.getElementById('root').innerHTML = `<div class="text-red-500 text-center p-4">Failed to initialize Firebase: ${error.message}. Please check your Firebase configuration.</div>`;
     }
     function ErrorBoundary({ children }) {
       const [hasError, setHasError] = useState(false);
@@ -53,11 +53,7 @@
         return () => window.removeEventListener('error', errorHandler);
       }, []);
       if (hasError) {
-        return (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            Error rendering component: {errorMessage}. Please refresh the page or check the console for details.
-          </div>
-        );
+        return React.createElement('div', { className: 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 text-center' }, `Error rendering component: ${errorMessage}. Please refresh the page or check the console for details.`);
       }
       return children;
     }
@@ -94,7 +90,6 @@
       const [recipientFilter, setRecipientFilter] = useState('');
       useEffect(() => {
         if (!firebaseInitialized || !db) {
-          console.error('Firestore database not initialized');
           setError('Firestore database not initialized. Please check Firebase configuration.');
           return;
         }
@@ -108,7 +103,6 @@
               timestamp: data.timestamp ? data.timestamp.toDate() : null
             };
           });
-          console.log('Fetched orders:', ordersData);
           setOrders(ordersData);
         }, (err) => {
           console.error('Firestore fetch error (orders):', err.message, err.code);
@@ -125,7 +119,6 @@
               archivedAt: data.archivedAt ? data.archivedAt.toDate() : null
             };
           });
-          console.log('Fetched archived orders:', archivedData);
           setArchivedOrders(archivedData);
         }, (err) => {
           console.error('Firestore fetch error (archive):', err.message, err.code);
@@ -136,7 +129,6 @@
             id: doc.id,
             name: doc.data().name || ''
           }));
-          console.log('Fetched sets:', setsData);
           setSets(setsData);
         }, (err) => {
           console.error('Firestore fetch error (sets):', err.message, err.code);
@@ -147,14 +139,12 @@
             id: doc.id,
             name: doc.data().name || ''
           }));
-          console.log('Fetched recipients:', recipientsData);
           setRecipients(recipientsData);
         }, (err) => {
           console.error('Firestore fetch error (recipients):', err.message, err.code);
           setError(`Failed to fetch recipients: ${err.message} (Code: ${err.code})`);
         });
         return () => {
-          console.log('Cleaning up Firestore listeners');
           unsubscribeOrders();
           unsubscribeArchived();
           unsubscribeSets();
@@ -233,18 +223,15 @@
         if (e.target.files[0]) {
           const file = e.target.files[0];
           if (file.size > 5 * 1024 * 1024) {
-            console.error('Image too large:', file.size);
             setError('Image file is too large. Please select a file under 5MB.');
             return;
           }
           setImage(file);
-          console.log('Selected image:', file.name, 'Size:', file.size);
         }
       };
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (!firebaseInitialized || !db || !storage) {
-          console.error('Firebase not initialized for submit');
           setError('Firebase not initialized. Check configuration.');
           setUploading(false);
           return;
@@ -259,20 +246,16 @@
         try {
           let imageUrl = formData.imageUrl || '';
           if (image) {
-            console.log('Uploading image:', image.name);
             const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
             await firebase.uploadBytes(storageRef, image);
             imageUrl = await firebase.getDownloadURL(storageRef);
-            console.log('Image uploaded successfully, URL:', imageUrl);
           }
           const orderData = {
             ...formData,
             imageUrl,
             timestamp: firebase.Timestamp.fromDate(new Date())
           };
-          console.log('Submitting order to Firestore:', orderData);
           const docRef = await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
-          console.log('Order saved successfully with ID:', docRef.id);
           setFormData({
             items: [{ itemName: '', set: '', recipient: '' }],
             pickupFrom: '',
@@ -302,29 +285,24 @@
         setReceivedOrderId(orderId);
         setPickedUpBy('');
         setShowReceivedModal(true);
-        console.log('Opening received modal for order:', orderId);
       };
       const closeReceivedModal = () => {
         setShowReceivedModal(false);
         setReceivedOrderId(null);
         setPickedUpBy('');
-        console.log('Closing received modal');
       };
       const confirmReceived = async () => {
         if (!firebaseInitialized || !db || !receivedOrderId || !pickedUpBy) {
-          console.error('Firestore not initialized or missing pickup person');
           setError('Cannot mark as received: Firebase not initialized or pickup person not selected.');
           return;
         }
         try {
           const receivedAt = firebase.Timestamp.fromDate(new Date());
-          console.log(`Marking order ${receivedOrderId} as received by ${pickedUpBy} at ${receivedAt.toDate().toLocaleString()}`);
           await firebase.updateDoc(firebase.doc(db, 'orders', receivedOrderId), {
             received: true,
             pickedUpBy,
             receivedAt
           });
-          console.log('Order marked as received successfully with timestamp:', receivedAt.toDate());
           closeReceivedModal();
           alert('Order marked as received!');
         } catch (error) {
@@ -334,18 +312,15 @@
       };
       const toggleReceived = async (id, currentStatus) => {
         if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for toggleReceived');
           setError('Firebase not initialized.');
           return;
         }
         try {
-          console.log(`Toggling received status for order ${id}, new status: ${!currentStatus}`);
           await firebase.updateDoc(firebase.doc(db, 'orders', id), {
             received: !currentStatus,
             pickedUpBy: !currentStatus ? '' : '',
             receivedAt: !currentStatus ? null : null
           });
-          console.log('Received status updated successfully');
         } catch (error) {
           console.error('Error updating received status:', error.message, error.code);
           setError(`Error updating status: ${error.message} (Code: ${error.code})`);
@@ -353,15 +328,12 @@
       };
       const deleteOrder = async (id) => {
         if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for deleteOrder');
           setError('Firebase not initialized.');
           return;
         }
         if (!window.confirm('Are you sure you want to delete this order? This action cannot be undone.')) return;
         try {
-          console.log(`Deleting order ID: ${id}`);
           await firebase.deleteDoc(firebase.doc(db, 'orders', id));
-          console.log('Order deleted successfully');
         } catch (error) {
           console.error('Error deleting order:', error.message, error.code);
           setError(`Error deleting order: ${error.message} (Code: ${error.code})`);
@@ -383,17 +355,14 @@
           imageUrl: order.imageUrl || ''
         });
         setImage(null);
-        console.log('Opening edit modal for order:', order.id);
       };
       const closeEditModal = () => {
         setEditOrder(null);
         setImage(null);
-        console.log('Closing edit modal');
       };
       const handleEditSubmit = async (e) => {
         e.preventDefault();
         if (!firebaseInitialized || !db || !storage) {
-          console.error('Firebase not initialized for edit submit');
           setError('Firebase not initialized.');
           return;
         }
@@ -404,16 +373,12 @@
         try {
           let imageUrl = editOrder.imageUrl;
           if (image) {
-            console.log('Uploading new image for edit:', image.name);
             const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
             await firebase.uploadBytes(storageRef, image);
             imageUrl = await firebase.getDownloadURL(storageRef);
-            console.log('Image uploaded successfully, URL:', imageUrl);
           }
           const updatedOrder = { ...editOrder, imageUrl };
-          console.log('Updating order:', updatedOrder);
           await firebase.updateDoc(firebase.doc(db, 'orders', editOrder.id), updatedOrder);
-          console.log('Order updated successfully with ID:', editOrder.id);
           closeEditModal();
           alert('Order updated successfully!');
         } catch (error) {
@@ -424,14 +389,11 @@
       const addSet = async (e) => {
         e.preventDefault();
         if (!firebaseInitialized || !db || !newSet.trim()) {
-          console.error('Firestore not initialized or empty set name');
           setError('Cannot add set: Firebase not initialized or set name is empty.');
           return;
         }
         try {
-          console.log('Adding set:', newSet.trim());
           const docRef = await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
-          console.log('Set added successfully with ID:', docRef.id);
           setNewSet('');
         } catch (error) {
           console.error('Error adding set:', error.message, error.code);
@@ -440,16 +402,13 @@
       };
       const deleteSet = async (id, setName) => {
         if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for deleteSet');
           setError('Firebase not initialized.');
           return;
         }
         if (!window.confirm(`Are you sure you want to delete the set "${setName}"? All associated orders will be archived.`)) return;
         try {
-          console.log(`Deleting set ${setName} (ID: ${id}) and archiving orders`);
           const ordersQuery = firebase.query(firebase.collection(db, 'orders'), firebase.where('items', 'array-contains-any', [{ set: setName }]));
           const ordersSnapshot = await firebase.getDocs(ordersQuery);
-          console.log(`Found ${ordersSnapshot.size} orders for set ${setName}`);
           const batch = firebase.writeBatch(db);
           ordersSnapshot.forEach(doc => {
             const orderData = doc.data();
@@ -458,7 +417,6 @@
           });
           batch.delete(firebase.doc(db, 'sets', id));
           await batch.commit();
-          console.log('Set deleted and orders archived successfully');
         } catch (error) {
           console.error('Error deleting set:', error.message, error.code);
           setError(`Error deleting set or archiving orders: ${error.message} (Code: ${error.code})`);
@@ -466,65 +424,28 @@
       };
       const restoreSet = async (setName) => {
         if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for restoreSet');
           setError('Firebase not initialized.');
           return;
         }
         try {
-          console.log(`Restoring set ${setName}`);
           const batch = firebase.writeBatch(db);
           const setDocRef = firebase.doc(firebase.collection(db, 'sets'));
           batch.set(setDocRef, { name: setName });
           const archivedQuery = firebase.query(firebase.collection(db, 'archive'), firebase.where('items', 'array-contains-any', [{ set: setName }]));
           const archivedSnapshot = await firebase.getDocs(archivedQuery);
-          console.log(`Found ${archivedSnapshot.size} archived orders for set ${setName}`);
           archivedSnapshot.forEach(doc => {
             const orderData = doc.data();
             batch.set(firebase.doc(db, 'orders', doc.id), { ...orderData });
             batch.delete(firebase.doc(db, 'archive', doc.id));
           });
           await batch.commit();
-          console.log('Set restored successfully with ID:', setDocRef.id);
         } catch (error) {
           console.error('Error restoring set:', error.message, error.code);
           setError(`Error restoring set: ${error.message} (Code: ${error.code})`);
         }
       };
-      const addRecipient = async (e) => {
-        e.preventDefault();
-        if (!firebaseInitialized || !db || !newRecipient.trim()) {
-          console.error('Firestore not initialized or empty recipient name');
-          setError('Cannot add recipient: Firebase not initialized or recipient name is empty.');
-          return;
-        }
-        try {
-          console.log('Adding recipient:', newRecipient.trim());
-          const docRef = await firebase.addDoc(firebase.collection(db, 'recipients'), { name: newRecipient.trim() });
-          console.log('Recipient added successfully with ID:', docRef.id);
-          setNewRecipient('');
-        } catch (error) {
-          console.error('Error adding recipient:', error.message, error.code);
-          setError(`Error adding recipient: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const deleteRecipient = async (id) => {
-        if (!firebaseInitialized || !db) {
-          console.error('Firestore not initialized for deleteRecipient');
-          setError('Firebase not initialized.');
-          return;
-        }
-        try {
-          console.log(`Deleting recipient ID: ${id}`);
-          await firebase.deleteDoc(firebase.doc(db, 'recipients', id));
-          console.log('Recipient deleted successfully');
-        } catch (error) {
-          console.error('Error deleting recipient:', error.message, error.code);
-          setError(`Error deleting recipient: ${error.message} (Code: ${error.code})`);
-        }
-      };
       const printOrderForm = (order) => {
         try {
-          console.log(`Generating P.O. for order: ${order.id}`);
           const doc = new jsPDF();
           doc.setFontSize(18);
           doc.setFont('helvetica', 'bold');
@@ -575,7 +496,6 @@
           doc.text('Thank you for your business!', 105, finalY, { align: 'center' });
           doc.text('Contact: support@sethardware.com', 105, finalY + 10, { align: 'center' });
           doc.save(`PO_${order.orderNumber || order.id}.pdf`);
-          console.log(`Generated P.O. for order: ${order.id}`);
         } catch (error) {
           console.error('Error generating P.O.:', error.message);
           setError(`Error generating P.O.: ${error.message}`);
@@ -583,7 +503,6 @@
       };
       const exportToPDF = (orders, title) => {
         try {
-          console.log(`Exporting PDF for ${title}`);
           const doc = new jsPDF();
           doc.setFontSize(16);
           doc.text(title, 20, 20);
@@ -647,7 +566,6 @@
             }
           });
           doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
-          console.log(`Generated PDF file for ${title}`);
         } catch (error) {
           console.error('Error generating PDF:', error.message);
           setError(`Error generating PDF: ${error.message}`);
@@ -678,777 +596,607 @@
         return acc;
       }, {});
       if (!firebaseInitialized) {
-        return (
-          <div className="container mx-auto p-4">
-            <h1 className="text-3xl font-bold mb-6 text-center">Hardware Order Management</h1>
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              Error: Firebase not initialized. Please check your Firebase configuration and ensure the project is active.
-            </div>
-          </div>
+        return React.createElement('div', { className: 'container mx-auto p-4' },
+          React.createElement('h1', { className: 'text-3xl font-bold mb-6 text-center' }, 'Hardware Order Management'),
+          React.createElement('div', { className: 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4' }, 'Error: Firebase not initialized. Please check your Firebase configuration and ensure the project is active.')
         );
       }
-      return (
-        <ErrorBoundary>
-          <div className="container mx-auto p-4">
-            <h1 className="text-3xl font-bold mb-6 text-center">Hardware Order Management</h1>
-            <div className="flex border-b mb-6">
-              <button
-                className={`px-4 py-2 font-semibold ${activeTab === 'home' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-                onClick={() => setActiveTab('home')}
-              >
-                Home
-              </button>
-              <button
-                className={`px-4 py-2 font-semibold ${activeTab === 'completed' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-                onClick={() => setActiveTab('completed')}
-              >
-                Completed Orders
-              </button>
-              <button
-                className={`px-4 py-2 font-semibold ${activeTab === 'options' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-                onClick={() => setActiveTab('options')}
-              >
-                Options
-              </button>
-              <button
-                className={`px-4 py-2 font-semibold ${activeTab === 'orders' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-                onClick={() => setActiveTab('orders')}
-              >
-                Orders
-              </button>
-              <button
-                className={`px-4 py-2 font-semibold ${activeTab === 'archive' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
-                onClick={() => setActiveTab('archive')}
-              >
-                Archive
-              </button>
-            </div>
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                {error}
-              </div>
-            )}
-            {showReceivedModal && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-                  <h2 className="text-2xl font-semibold mb-4">Mark Order as Received</h2>
-                  <div className="space-y-4">
-                    <p>Select the person who picked up the order:</p>
-                    <select
-                      value={pickedUpBy}
-                      onChange={(e) => setPickedUpBy(e.target.value)}
-                      className="w-full p-2 border rounded"
-                      required
-                    >
-                      <option value="" disabled>Select Pickup Person</option>
-                      {recipients.map(recipient => (
-                        <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                      ))}
-                    </select>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={confirmReceived}
-                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                        disabled={!pickedUpBy}
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={closeReceivedModal}
-                        className="w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {editOrder && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
-                  <h2 className="text-2xl font-semibold mb-4">Edit Order</h2>
-                  <form onSubmit={handleEditSubmit} className="space-y-4">
-                    {editOrder.items.map((item, index) => (
-                      <div key={index} className="border p-4 rounded">
-                        <div className="flex justify-between items-center mb-2">
-                          <h3 className="text-lg font-semibold">Item {index + 1}</h3>
-                          {editOrder.items.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeEditItem(index)}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          name="itemName"
-                          value={item.itemName}
-                          onChange={(e) => handleEditInputChange(e, index)}
-                          placeholder="Item Name"
-                          className="w-full p-2 border rounded mb-2"
-                          required
-                        />
-                        <select
-                          name="set"
-                          value={item.set}
-                          onChange={(e) => handleEditInputChange(e, index)}
-                          className="w-full p-2 border rounded mb-2"
-                          required
-                        >
-                          <option value="">Select Set</option>
-                          {sets.map(set => (
-                            <option key={set.id} value={set.name}>{set.name}</option>
-                          ))}
-                        </select>
-                        <select
-                          name="recipient"
-                          value={item.recipient}
-                          onChange={(e) => handleEditInputChange(e, index)}
-                          className="w-full p-2 border rounded"
-                          required
-                        >
-                          <option value="">Select Recipient</option>
-                          {recipients.map(recipient => (
-                            <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={addEditItem}
-                      className="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors"
-                    >
-                      Add Item
-                    </button>
-                    <div className="space-y-2">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={editOrder.applyToAll}
-                          onChange={(e) => setEditOrder(prev => ({ ...prev, applyToAll: e.target.checked }))}
-                          className="mr-2"
-                        />
-                        Apply same set and recipient to all items
-                      </label>
-                      {editOrder.applyToAll && (
-                        <div className="space-y-2">
-                          <select
-                            name="allSet"
-                            value={editOrder.allSet}
-                            onChange={handleEditInputChange}
-                            className="w-full p-2 border rounded"
-                          >
-                            <option value="">Select Set for All</option>
-                            {sets.map(set => (
-                              <option key={set.id} value={set.name}>{set.name}</option>
-                            ))}
-                          </select>
-                          <select
-                            name="allRecipient"
-                            value={editOrder.allRecipient}
-                            onChange={handleEditInputChange}
-                            className="w-full p-2 border rounded"
-                          >
-                            <option value="">Select Recipient for All</option>
-                            {recipients.map(recipient => (
-                              <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={applyToAllEditItems}
-                            className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                          >
-                            Apply to All Items
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      name="pickupFrom"
-                      value={editOrder.pickupFrom}
-                      onChange={handleEditInputChange}
-                      placeholder="Pickup From"
-                      className="w-full p-2 border rounded"
-                      required
-                    />
-                    <input
-                      type="text"
-                      name="orderNumber"
-                      value={editOrder.orderNumber}
-                      onChange={handleEditInputChange}
-                      placeholder="Order Number"
-                      className="w-full p-2 border rounded"
-                      required
-                    />
-                    <select
-                      name="deliveryMethod"
-                      value={editOrder.deliveryMethod}
-                      onChange={handleEditInputChange}
-                      className="w-full p-2 border rounded"
-                    >
-                      <option value="shipped">Shipped</option>
-                      <option value="pickup">Pickup</option>
-                    </select>
-                    {editOrder.deliveryMethod === 'pickup' ? (
-                      <input
-                        type="date"
-                        name="deliveryDate"
-                        value={editOrder.deliveryDate}
-                        onChange={handleEditInputChange}
-                        placeholder="Delivery Date"
-                        className="w-full p-2 border rounded"
-                        required
-                      />
-                    ) : (
-                      <div className="flex space-x-2">
-                        <input
-                          type="date"
-                          name="startDate"
-                          value={editOrder.startDate}
-                          onChange={handleEditInputChange}
-                          placeholder="Shipping Start Date"
-                          className="w-full p-2 border rounded"
-                          required
-                        />
-                        <input
-                          type="date"
-                          name="endDate"
-                          value={editOrder.endDate}
-                          onChange={handleEditInputChange}
-                          placeholder="Shipping End Date"
-                          className="w-full p-2 border rounded"
-                          required
-                        />
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      onChange={handleImageChange}
-                      accept="image/*"
-                      className="w-full p-2 border rounded"
-                    />
-                    <div className="flex space-x-2">
-                      <button
-                        type="submit"
-                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                      >
-                        Save Changes
-                      </button>
-                      <button
-                        onClick={closeEditModal}
-                        className="w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-            {activeTab === 'home' && (
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <select
-                    value={recipientFilter}
-                    onChange={(e) => setRecipientFilter(e.target.value)}
-                    className="p-2 border rounded"
-                  >
-                    <option value="">All Recipients</option>
-                    {recipients.map(recipient => (
-                      <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                    ))}
-                  </select>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => exportToPDF(filteredActiveOrders, 'Active Orders')}
-                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                      disabled={!firebaseInitialized}
-                    >
-                      Export Active Orders to PDF
-                    </button>
-                  </div>
-                </div>
-                <h2 className="text-2xl font-semibold mb-4">Active Orders</h2>
-                {filteredActiveOrders.length === 0 ? (
-                  <p className="text-gray-600">No active orders found.</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredActiveOrders.map(order => (
-                      <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
-                        <h3 className="text-xl font-semibold mb-2">{order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'}</h3>
-                        <p><strong>Sets:</strong> {order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'}</p>
-                        <p><strong>Recipients:</strong> {order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'}</p>
-                        <p><strong>Pickup From:</strong> {order.pickupFrom || 'N/A'}</p>
-                        <p><strong>Order Number:</strong> {order.orderNumber || 'N/A'}</p>
-                        <p><strong>Delivery:</strong> {order.deliveryMethod || 'N/A'}</p>
-                        <p><strong>Dates:</strong> {order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`}</p>
-                        <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
-                        {order.received && order.pickedUpBy && (
-                          <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
-                        )}
-                        {order.received && order.receivedAt && (
-                          <p><strong>Received At:</strong> {order.receivedAt.toLocaleString()}</p>
-                        )}
-                        {order.imageUrl && (
-                          <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
-                        )}
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => openReceivedModal(order.id)}
-                            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors"
-                          >
-                            Received
-                          </button>
-                          <button
-                            onClick={() => openEditModal(order)}
-                            className="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => deleteOrder(order.id)}
-                            className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors"
-                          >
-                            Delete
-                          </button>
-                          <button
-                            onClick={() => printOrderForm(order)}
-                            className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2"
-                          >
-                            Print P.O.
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {activeTab === 'orders' && (
-              <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300">
-                <h2 className="text-2xl font-semibold mb-4">New Order</h2>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {formData.items.map((item, index) => (
-                    <div key={index} className="border p-4 rounded">
-                      <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold">Item {index + 1}</h3>
-                        {formData.items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeItem(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        name="itemName"
-                        value={item.itemName}
-                        onChange={(e) => handleInputChange(e, index)}
-                        placeholder="Item Name"
-                        className="w-full p-2 border rounded mb-2"
-                        required
-                      />
-                      <select
-                        name="set"
-                        value={item.set}
-                        onChange={(e) => handleInputChange(e, index)}
-                        className="w-full p-2 border rounded mb-2"
-                        required
-                      >
-                        <option value="">Select Set</option>
-                        {sets.map(set => (
-                          <option key={set.id} value={set.name}>{set.name}</option>
-                        ))}
-                      </select>
-                      <select
-                        name="recipient"
-                        value={item.recipient}
-                        onChange={(e) => handleInputChange(e, index)}
-                        className="w-full p-2 border rounded"
-                        required
-                      >
-                        <option value="">Select Recipient</option>
-                        {recipients.map(recipient => (
-                          <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={addItem}
-                    className="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors"
-                  >
-                    Add Item
-                  </button>
-                  <div className="space-y-2">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={formData.applyToAll}
-                        onChange={(e) => setFormData(prev => ({ ...prev, applyToAll: e.target.checked }))}
-                        className="mr-2"
-                      />
-                      Apply same set and recipient to all items
-                    </label>
-                    {formData.applyToAll && (
-                      <div className="space-y-2">
-                        <select
-                          name="allSet"
-                          value={formData.allSet}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border rounded"
-                        >
-                          <option value="">Select Set for All</option>
-                          {sets.map(set => (
-                            <option key={set.id} value={set.name}>{set.name}</option>
-                          ))}
-                        </select>
-                        <select
-                          name="allRecipient"
-                          value={formData.allRecipient}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border rounded"
-                        >
-                          <option value="">Select Recipient for All</option>
-                          {recipients.map(recipient => (
-                            <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={applyToAllItems}
-                          className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                        >
-                          Apply to All Items
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    name="pickupFrom"
-                    value={formData.pickupFrom}
-                    onChange={handleInputChange}
-                    placeholder="Pickup From"
-                    className="w-full p-2 border rounded"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="orderNumber"
-                    value={formData.orderNumber}
-                    onChange={handleInputChange}
-                    placeholder="Order Number"
-                    className="w-full p-2 border rounded"
-                    required
-                  />
-                  <select
-                    name="deliveryMethod"
-                    value={formData.deliveryMethod}
-                    onChange={handleInputChange}
-                    className="w-full p-2 border rounded"
-                  >
-                    <option value="shipped">Shipped</option>
-                    <option value="pickup">Pickup</option>
-                  </select>
-                  {formData.deliveryMethod === 'pickup' ? (
-                    <input
-                      type="date"
-                      name="deliveryDate"
-                      value={formData.deliveryDate}
-                      onChange={handleInputChange}
-                      placeholder="Delivery Date"
-                      className="w-full p-2 border rounded"
-                      required
-                    />
-                  ) : (
-                    <div className="flex space-x-2">
-                      <input
-                        type="date"
-                        name="startDate"
-                        value={formData.startDate}
-                        onChange={handleInputChange}
-                        placeholder="Shipping Start Date"
-                        className="w-full p-2 border rounded"
-                        required
-                      />
-                      <input
-                        type="date"
-                        name="endDate"
-                        value={formData.endDate}
-                        onChange={handleInputChange}
-                        placeholder="Shipping End Date"
-                        className="w-full p-2 border rounded"
-                        required
-                      />
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    onChange={handleImageChange}
-                    accept="image/*"
-                    className="w-full p-2 border rounded"
-                  />
-                  <button
-                    type="submit"
-                    disabled={uploading || !firebaseInitialized}
-                    className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300"
-                  >
-                    {uploading ? 'Submitting...' : 'Submit Order'}
-                  </button>
-                </form>
-              </div>
-            )}
-            {activeTab === 'options' && (
-              <div className="max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300">
-                <h2 className="text-2xl font-semibold mb-4">Options</h2>
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Manage Sets</h3>
-                    <form onSubmit={addSet} className="flex space-x-2 mb-4">
-                      <input
-                        type="text"
-                        value={newSet}
-                        onChange={(e) => setNewSet(e.target.value)}
-                        placeholder="Add New Set"
-                        className="w-full p-2 border rounded"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!firebaseInitialized}
-                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300"
-                      >
-                        Add
-                      </button>
-                    </form>
-                    <ul className="space-y-2">
-                      {sets.length === 0 ? (
-                        <li className="text-gray-600">No sets available.</li>
-                      ) : (
-                        sets.map(set => (
-                          <li key={set.id} className="flex justify-between items-center">
-                            <span>{set.name || 'Unnamed Set'}</span>
-                            <button
-                              onClick={() => deleteSet(set.id, set.name)}
-                              className="text-red-500 hover:text-red-700"
-                              disabled={!firebaseInitialized}
-                            >
-                              Delete
-                            </button>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Manage Recipients</h3>
-                    <form onSubmit={addRecipient} className="flex space-x-2 mb-4">
-                      <input
-                        type="text"
-                        value={newRecipient}
-                        onChange={(e) => setNewRecipient(e.target.value)}
-                        placeholder="Add New Recipient"
-                        className="w-full p-2 border rounded"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!firebaseInitialized}
-                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300"
-                      >
-                        Add
-                      </button>
-                    </form>
-                    <ul className="space-y-2">
-                      {recipients.length === 0 ? (
-                        <li className="text-gray-600">No recipients available.</li>
-                      ) : (
-                        recipients.map(recipient => (
-                          <li key={recipient.id} className="flex justify-between items-center">
-                            <span>{recipient.name || 'Unnamed Recipient'}</span>
-                            <button
-                              onClick={() => deleteRecipient(recipient.id)}
-                              className="text-red-500 hover:text-red-700"
-                              disabled={!firebaseInitialized}
-                            >
-                              Delete
-                            </button>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-            {activeTab === 'completed' && (
-              <div className="max-w-4xl mx-auto">
-                <div className="flex justify-between items-center mb-4">
-                  <select
-                    value={recipientFilter}
-                    onChange={(e) => setRecipientFilter(e.target.value)}
-                    className="p-2 border rounded"
-                  >
-                    <option value="">All Recipients</option>
-                    {recipients.map(recipient => (
-                      <option key={recipient.id} value={recipient.name}>{recipient.name}</option>
-                    ))}
-                  </select>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => exportToPDF(filteredCompletedOrders, 'Completed Orders')}
-                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                      disabled={!firebaseInitialized}
-                    >
-                      Export Completed Orders to PDF
-                    </button>
-                  </div>
-                </div>
-                <h2 className="text-2xl font-semibold mb-4">Completed Orders</h2>
-                {Object.keys(groupedCompletedOrders).length === 0 ? (
-                  <p className="text-gray-600">No completed orders found.</p>
-                ) : (
-                  Object.keys(groupedCompletedOrders).sort().map(setName => (
-                    <div key={setName} className="mb-8">
-                      <h3 className="text-xl font-semibold mb-4">{setName}</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {groupedCompletedOrders[setName]
-                          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-                          .map(order => (
-                            <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
-                              <h4 className="text-lg font-semibold mb-2">{order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'}</h4>
-                              <p><strong>Sets:</strong> {order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'}</p>
-                              <p><strong>Recipients:</strong> {order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'}</p>
-                              <p><strong>Pickup From:</strong> {order.pickupFrom || 'N/A'}</p>
-                              <p><strong>Order Number:</strong> {order.orderNumber || 'N/A'}</p>
-                              <p><strong>Delivery:</strong> {order.deliveryMethod || 'N/A'}</p>
-                              <p><strong>Dates:</strong> {order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`}</p>
-                              <p><strong>Received:</strong> Yes</p>
-                              {order.pickedUpBy && (
-                                <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
-                              )}
-                              {order.receivedAt && (
-                                <p><strong>Received At:</strong> {order.receivedAt.toLocaleString()}</p>
-                              )}
-                              {order.imageUrl && (
-                                <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
-                              )}
-                              <div className="mt-4 grid grid-cols-2 gap-2">
-                                <button
-                                  onClick={() => toggleReceived(order.id, order.received)}
-                                  className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors"
-                                >
-                                  Undo Received
-                                </button>
-                                <button
-                                  onClick={() => openEditModal(order)}
-                                  className="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => deleteOrder(order.id)}
-                                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors"
-                                >
-                                  Delete
-                                </button>
-                                <button
-                                  onClick={() => printOrderForm(order)}
-                                  className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2"
-                                >
-                                  Print P.O.
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
+      return React.createElement(ErrorBoundary, null,
+        React.createElement('div', { className: 'container mx-auto p-4' },
+          React.createElement('h1', { className: 'text-3xl font-bold mb-6 text-center' }, 'Hardware Order Management'),
+          React.createElement('div', { className: 'flex border-b mb-6' },
+            React.createElement('button', {
+              className: `px-4 py-2 font-semibold ${activeTab === 'home' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
+              onClick: () => setActiveTab('home')
+            }, 'Home'),
+            React.createElement('button', {
+              className: `px-4 py-2 font-semibold ${activeTab === 'completed' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
+              onClick: () => setActiveTab('completed')
+            }, 'Completed Orders'),
+            React.createElement('button', {
+              className: `px-4 py-2 font-semibold ${activeTab === 'options' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
+              onClick: () => setActiveTab('options')
+            }, 'Options'),
+            React.createElement('button', {
+              className: `px-4 py-2 font-semibold ${activeTab === 'orders' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
+              onClick: () => setActiveTab('orders')
+            }, 'Orders'),
+            React.createElement('button', {
+              className: `px-4 py-2 font-semibold ${activeTab === 'archive' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
+              onClick: () => setActiveTab('archive')
+            }, 'Archive')
+          ),
+          error && React.createElement('div', { className: 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4' }, error),
+          showReceivedModal && React.createElement('div', { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50' },
+            React.createElement('div', { className: 'bg-white p-8 rounded-lg shadow-lg max-w-md w-full' },
+              React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Mark Order as Received'),
+              React.createElement('div', { className: 'space-y-4' },
+                React.createElement('p', null, 'Select the person who picked up the order:'),
+                React.createElement('select', {
+                  value: pickedUpBy,
+                  onChange: (e) => setPickedUpBy(e.target.value),
+                  className: 'w-full p-2 border rounded',
+                  required: true
+                },
+                  React.createElement('option', { value: '', disabled: true }, 'Select Pickup Person'),
+                  recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+                ),
+                React.createElement('div', { className: 'flex space-x-2' },
+                  React.createElement('button', {
+                    onClick: confirmReceived,
+                    className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
+                    disabled: !pickedUpBy
+                  }, 'Confirm'),
+                  React.createElement('button', {
+                    onClick: closeReceivedModal,
+                    className: 'w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors'
+                  }, 'Cancel')
+                )
+              )
+            )
+          ),
+          editOrder && React.createElement('div', { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50' },
+            React.createElement('div', { className: 'bg-white p-8 rounded-lg shadow-lg max-w-lg w-full' },
+              React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Edit Order'),
+              React.createElement('form', { onSubmit: handleEditSubmit, className: 'space-y-4' },
+                editOrder.items.map((item, index) => React.createElement('div', { key: index, className: 'border p-4 rounded' },
+                  React.createElement('div', { className: 'flex justify-between items-center mb-2' },
+                    React.createElement('h3', { className: 'text-lg font-semibold' }, `Item ${index + 1}`),
+                    editOrder.items.length > 1 && React.createElement('button', {
+                      type: 'button',
+                      onClick: () => removeEditItem(index),
+                      className: 'text-red-500 hover:text-red-700'
+                    }, 'Remove')
+                  ),
+                  React.createElement('input', {
+                    type: 'text',
+                    name: 'itemName',
+                    value: item.itemName,
+                    onChange: (e) => handleEditInputChange(e, index),
+                    placeholder: 'Item Name',
+                    className: 'w-full p-2 border rounded mb-2',
+                    required: true
+                  }),
+                  React.createElement('select', {
+                    name: 'set',
+                    value: item.set,
+                    onChange: (e) => handleEditInputChange(e, index),
+                    className: 'w-full p-2 border rounded mb-2',
+                    required: true
+                  },
+                    React.createElement('option', { value: '' }, 'Select Set'),
+                    sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
+                  ),
+                  React.createElement('select', {
+                    name: 'recipient',
+                    value: item.recipient,
+                    onChange: (e) => handleEditInputChange(e, index),
+                    className: 'w-full p-2 border rounded',
+                    required: true
+                  },
+                    React.createElement('option', { value: '' }, 'Select Recipient'),
+                    recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+                  )
+                )),
+                React.createElement('button', {
+                  type: 'button',
+                  onClick: addEditItem,
+                  className: 'w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors'
+                }, 'Add Item'),
+                React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('label', { className: 'flex items-center' },
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: editOrder.applyToAll,
+                      onChange: (e) => setEditOrder(prev => ({ ...prev, applyToAll: e.target.checked })),
+                      className: 'mr-2'
+                    }),
+                    'Apply same set and recipient to all items'
+                  ),
+                  editOrder.applyToAll && React.createElement('div', { className: 'space-y-2' },
+                    React.createElement('select', {
+                      name: 'allSet',
+                      value: editOrder.allSet,
+                      onChange: handleEditInputChange,
+                      className: 'w-full p-2 border rounded'
+                    },
+                      React.createElement('option', { value: '' }, 'Select Set for All'),
+                      sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
+                    ),
+                    React.createElement('select', {
+                      name: 'allRecipient',
+                      value: editOrder.allRecipient,
+                      onChange: handleEditInputChange,
+                      className: 'w-full p-2 border rounded'
+                    },
+                      React.createElement('option', { value: '' }, 'Select Recipient for All'),
+                      recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+                    ),
+                    React.createElement('button', {
+                      type: 'button',
+                      onClick: applyToAllEditItems,
+                      className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors'
+                    }, 'Apply to All Items')
+                  )
+                ),
+                React.createElement('input', {
+                  type: 'text',
+                  name: 'pickupFrom',
+                  value: editOrder.pickupFrom,
+                  onChange: handleEditInputChange,
+                  placeholder: 'Pickup From',
+                  className: 'w-full p-2 border rounded',
+                  required: true
+                }),
+                React.createElement('input', {
+                  type: 'text',
+                  name: 'orderNumber',
+                  value: editOrder.orderNumber,
+                  onChange: handleEditInputChange,
+                  placeholder: 'Order Number',
+                  className: 'w-full p-2 border rounded',
+                  required: true
+                }),
+                React.createElement('select', {
+                  name: 'deliveryMethod',
+                  value: editOrder.deliveryMethod,
+                  onChange: handleEditInputChange,
+                  className: 'w-full p-2 border rounded'
+                },
+                  React.createElement('option', { value: 'shipped' }, 'Shipped'),
+                  React.createElement('option', { value: 'pickup' }, 'Pickup')
+                ),
+                editOrder.deliveryMethod === 'pickup' ?
+                  React.createElement('input', {
+                    type: 'date',
+                    name: 'deliveryDate',
+                    value: editOrder.deliveryDate,
+                    onChange: handleEditInputChange,
+                    placeholder: 'Delivery Date',
+                    className: 'w-full p-2 border rounded',
+                    required: true
+                  }) :
+                  React.createElement('div', { className: 'flex space-x-2' },
+                    React.createElement('input', {
+                      type: 'date',
+                      name: 'startDate',
+                      value: editOrder.startDate,
+                      onChange: handleEditInputChange,
+                      placeholder: 'Shipping Start Date',
+                      className: 'w-full p-2 border rounded',
+                      required: true
+                    }),
+                    React.createElement('input', {
+                      type: 'date',
+                      name: 'endDate',
+                      value: editOrder.endDate,
+                      onChange: handleEditInputChange,
+                      placeholder: 'Shipping End Date',
+                      className: 'w-full p-2 border rounded',
+                      required: true
+                    })
+                  ),
+                React.createElement('input', {
+                  type: 'file',
+                  onChange: handleImageChange,
+                  accept: 'image/*',
+                  className: 'w-full p-2 border rounded'
+                }),
+                React.createElement('div', { className: 'flex space-x-2' },
+                  React.createElement('button', {
+                    type: 'submit',
+                    className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors'
+                  }, 'Save Changes'),
+                  React.createElement('button', {
+                    onClick: closeEditModal,
+                    className: 'w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors'
+                  }, 'Cancel')
+                )
+              )
+            )
+          ),
+          activeTab === 'home' && React.createElement('div', null,
+            React.createElement('div', { className: 'flex justify-between items-center mb-4' },
+              React.createElement('select', {
+                value: recipientFilter,
+                onChange: (e) => setRecipientFilter(e.target.value),
+                className: 'p-2 border rounded'
+              },
+                React.createElement('option', { value: '' }, 'All Recipients'),
+                recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+              ),
+              React.createElement('div', { className: 'flex space-x-2' },
+                React.createElement('button', {
+                  onClick: () => exportToPDF(filteredActiveOrders, 'Active Orders'),
+                  className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
+                  disabled: !firebaseInitialized
+                }, 'Export Active Orders to PDF')
+              )
+            ),
+            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Active Orders'),
+            filteredActiveOrders.length === 0 ?
+              React.createElement('p', { className: 'text-gray-600' }, 'No active orders found.') :
+              React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' },
+                filteredActiveOrders.map(order => React.createElement('div', { key: order.id, className: 'bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300' },
+                  React.createElement('h3', { className: 'text-xl font-semibold mb-2' }, order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'),
+                  React.createElement('p', null, React.createElement('strong', null, 'Sets:'), ' ', order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'),
+                  React.createElement('p', null, React.createElement('strong', null, 'Recipients:'), ' ', order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'),
+                  React.createElement('p', null, React.createElement('strong', null, 'Pickup From:'), ' ', order.pickupFrom || 'N/A'),
+                  React.createElement('p', null, React.createElement('strong', null, 'Order Number:'), ' ', order.orderNumber || 'N/A'),
+                  React.createElement('p', null, React.createElement('strong', null, 'Delivery:'), ' ', order.deliveryMethod || 'N/A'),
+                  React.createElement('p', null, React.createElement('strong', null, 'Dates:'), ' ', order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`),
+                  React.createElement('p', null, React.createElement('strong', null, 'Received:'), ' ', order.received ? 'Yes' : 'No'),
+                  order.received && order.pickedUpBy && React.createElement('p', null, React.createElement('strong', null, 'Picked Up By:'), ' ', order.pickedUpBy),
+                  order.received && order.receivedAt && React.createElement('p', null, React.createElement('strong', null, 'Received At:'), ' ', order.receivedAt.toLocaleString()),
+                  order.imageUrl && React.createElement('img', { src: order.imageUrl, alt: 'Order item', className: 'w-full h-32 object-cover rounded mt-2' }),
+                  React.createElement('div', { className: 'mt-4 grid grid-cols-2 gap-2' },
+                    React.createElement('button', {
+                      onClick: () => openReceivedModal(order.id),
+                      className: 'bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors'
+                    }, 'Received'),
+                    React.createElement('button', {
+                      onClick: () => openEditModal(order),
+                      className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors'
+                    }, 'Edit'),
+                    React.createElement('button', {
+                      onClick: () => deleteOrder(order.id),
+                      className: 'bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors'
+                    }, 'Delete'),
+                    React.createElement('button', {
+                      onClick: () => printOrderForm(order),
+                      className: 'bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2'
+                    }, 'Print P.O.')
+                  )
+                ))
+              )
+            ),
+          activeTab === 'orders' && React.createElement('div', { className: 'max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300' },
+            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'New Order'),
+            React.createElement('form', { onSubmit: handleSubmit, className: 'space-y-4' },
+              formData.items.map((item, index) => React.createElement('div', { key: index, className: 'border p-4 rounded' },
+                React.createElement('div', { className: 'flex justify-between items-center mb-2' },
+                  React.createElement('h3', { className: 'text-lg font-semibold' }, `Item ${index + 1}`),
+                  formData.items.length > 1 && React.createElement('button', {
+                    type: 'button',
+                    onClick: () => removeItem(index),
+                    className: 'text-red-500 hover:text-red-700'
+                  }, 'Remove')
+                ),
+                React.createElement('input', {
+                  type: 'text',
+                  name: 'itemName',
+                  value: item.itemName,
+                  onChange: (e) => handleInputChange(e, index),
+                  placeholder: 'Item Name',
+                  className: 'w-full p-2 border rounded mb-2',
+                  required: true
+                }),
+                React.createElement('select', {
+                  name: 'set',
+                  value: item.set,
+                  onChange: (e) => handleInputChange(e, index),
+                  className: 'w-full p-2 border rounded mb-2',
+                  required: true
+                },
+                  React.createElement('option', { value: '' }, 'Select Set'),
+                  sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
+                ),
+                React.createElement('select', {
+                  name: 'recipient',
+                  value: item.recipient,
+                  onChange: (e) => handleInputChange(e, index),
+                  className: 'w-full p-2 border rounded',
+                  required: true
+                },
+                  React.createElement('option', { value: '' }, 'Select Recipient'),
+                  recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+                )
+              )),
+              React.createElement('button', {
+                type: 'button',
+                onClick: addItem,
+                className: 'w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors'
+              }, 'Add Item'),
+              React.createElement('div', { className: 'space-y-2' },
+                React.createElement('label', { className: 'flex items-center' },
+                  React.createElement('input', {
+                    type: 'checkbox',
+                    checked: formData.applyToAll,
+                    onChange: (e) => setFormData(prev => ({ ...prev, applyToAll: e.target.checked })),
+                    className: 'mr-2'
+                  }),
+                  'Apply same set and recipient to all items'
+                ),
+                formData.applyToAll && React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('select', {
+                    name: 'allSet',
+                    value: formData.allSet,
+                    onChange: handleInputChange,
+                    className: 'w-full p-2 border rounded'
+                  },
+                    React.createElement('option', { value: '' }, 'Select Set for All'),
+                    sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
+                  ),
+                  React.createElement('select', {
+                    name: 'allRecipient',
+                    value: formData.allRecipient,
+                    onChange: handleInputChange,
+                    className: 'w-full p-2 border rounded'
+                  },
+                    React.createElement('option', { value: '' }, 'Select Recipient for All'),
+                    recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+                  ),
+                  React.createElement('button', {
+                    type: 'button',
+                    onClick: applyToAllItems,
+                    className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors'
+                  }, 'Apply to All Items')
+                )
+              ),
+              React.createElement('input', {
+                type: 'text',
+                name: 'pickupFrom',
+                value: formData.pickupFrom,
+                onChange: handleInputChange,
+                placeholder: 'Pickup From',
+                className: 'w-full p-2 border rounded',
+                required: true
+              }),
+              React.createElement('input', {
+                type: 'text',
+                name: 'orderNumber',
+                value: formData.orderNumber,
+                onChange: handleInputChange,
+                placeholder: 'Order Number',
+                className: 'w-full p-2 border rounded',
+                required: true
+              }),
+              React.createElement('select', {
+                name: 'deliveryMethod',
+                value: formData.deliveryMethod,
+                onChange: handleInputChange,
+                className: 'w-full p-2 border rounded'
+              },
+                React.createElement('option', { value: 'shipped' }, 'Shipped'),
+                React.createElement('option', { value: 'pickup' }, 'Pickup')
+              ),
+              formData.deliveryMethod === 'pickup' ?
+                React.createElement('input', {
+                  type: 'date',
+                  name: 'deliveryDate',
+                  value: formData.deliveryDate,
+                  onChange: handleInputChange,
+                  placeholder: 'Delivery Date',
+                  className: 'w-full p-2 border rounded',
+                  required: true
+                }) :
+                React.createElement('div', { className: 'flex space-x-2' },
+                  React.createElement('input', {
+                    type: 'date',
+                    name: 'startDate',
+                    value: formData.startDate,
+                    onChange: handleInputChange,
+                    placeholder: 'Shipping Start Date',
+                    className: 'w-full p-2 border rounded',
+                    required: true
+                  }),
+                  React.createElement('input', {
+                    type: 'date',
+                    name: 'endDate',
+                    value: formData.endDate,
+                    onChange: handleInputChange,
+                    placeholder: 'Shipping End Date',
+                    className: 'w-full p-2 border rounded',
+                    required: true
+                  })
+                ),
+              React.createElement('input', {
+                type: 'file',
+                onChange: handleImageChange,
+                accept: 'image/*',
+                className: 'w-full p-2 border rounded'
+              }),
+              React.createElement('button', {
+                type: 'submit',
+                disabled: uploading || !firebaseInitialized,
+                className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300'
+              }, uploading ? 'Submitting...' : 'Submit Order')
+            )
+          ),
+          activeTab === 'options' && React.createElement('div', { className: 'max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300' },
+            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Options'),
+            React.createElement('div', { className: 'space-y-6' },
+              React.createElement('div', null,
+                React.createElement('h3', { className: 'text-lg font-semibold mb-2' }, 'Manage Sets'),
+                React.createElement('form', { onSubmit: addSet, className: 'flex space-x-2 mb-4' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: newSet,
+                    onChange: (e) => setNewSet(e.target.value),
+                    placeholder: 'Add New Set',
+                    className: 'w-full p-2 border rounded'
+                  }),
+                  React.createElement('button', {
+                    type: 'submit',
+                    disabled: !firebaseInitialized,
+                    className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300'
+                  }, 'Add')
+                ),
+                React.createElement('ul', { className: 'space-y-2' },
+                  sets.length === 0 ?
+                    React.createElement('li', { className: 'text-gray-600' }, 'No sets available.') :
+                    sets.map(set => React.createElement('li', { key: set.id, className: 'flex justify-between items-center' },
+                      React.createElement('span', null, set.name || 'Unnamed Set'),
+                      React.createElement('button', {
+                        onClick: () => deleteSet(set.id, set.name),
+                        className: 'text-red-500 hover:text-red-700',
+                        disabled: !firebaseInitialized
+                      }, 'Delete')
+                    ))
+                )
+              ),
+              React.createElement('div', null,
+                React.createElement('h3', { className: 'text-lg font-semibold mb-2' }, 'Manage Recipients'),
+                React.createElement('form', { onSubmit: addRecipient, className: 'flex space-x-2 mb-4' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: newRecipient,
+                    onChange: (e) => setNewRecipient(e.target.value),
+                    placeholder: 'Add New Recipient',
+                    className: 'w-full p-2 border rounded'
+                  }),
+                  React.createElement('button', {
+                    type: 'submit',
+                    disabled: !firebaseInitialized,
+                    className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300'
+                  }, 'Add')
+                ),
+                React.createElement('ul', { className: 'space-y-2' },
+                  recipients.length === 0 ?
+                    React.createElement('li', { className: 'text-gray-600' }, 'No recipients available.') :
+                    recipients.map(recipient => React.createElement('li', { key: recipient.id, className: 'flex justify-between items-center' },
+                      React.createElement('span', null, recipient.name || 'Unnamed Recipient'),
+                      React.createElement('button', {
+                        onClick: () => deleteRecipient(recipient.id),
+                        className: 'text-red-500 hover:text-red-700',
+                        disabled: !firebaseInitialized
+                      }, 'Delete')
+                    ))
+                )
+              )
+            )
+          ),
+          activeTab === 'completed' && React.createElement('div', { className: 'max-w-4xl mx-auto' },
+            React.createElement('div', { className: 'flex justify-between items-center mb-4' },
+              React.createElement('select', {
+                value: recipientFilter,
+                onChange: (e) => setRecipientFilter(e.target.value),
+                className: 'p-2 border rounded'
+              },
+                React.createElement('option', { value: '' }, 'All Recipients'),
+                recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
+              ),
+              React.createElement('div', { className: 'flex space-x-2' },
+                React.createElement('button', {
+                  onClick: () => exportToPDF(filteredCompletedOrders, 'Completed Orders'),
+                  className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
+                  disabled: !firebaseInitialized
+                }, 'Export Completed Orders to PDF')
+              )
+            ),
+            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Completed Orders'),
+            Object.keys(groupedCompletedOrders).length === 0 ?
+              React.createElement('p', { className: 'text-gray-600' }, 'No completed orders found.') :
+              Object.keys(groupedCompletedOrders).sort().map(setName => React.createElement('div', { key: setName, className: 'mb-8' },
+                React.createElement('h3', { className: 'text-xl font-semibold mb-4' }, setName),
+                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' },
+                  groupedCompletedOrders[setName]
+                    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                    .map(order => React.createElement('div', { key: order.id, className: 'bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300' },
+                      React.createElement('h4', { className: 'text-lg font-semibold mb-2' }, order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'),
+                      React.createElement('p', null, React.createElement('strong', null, 'Sets:'), ' ', order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'),
+                      React.createElement('p', null, React.createElement('strong', null, 'Recipients:'), ' ', order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'),
+                      React.createElement('p', null, React.createElement('strong', null, 'Pickup From:'), ' ', order.pickupFrom || 'N/A'),
+                      React.createElement('p', null, React.createElement('strong', null, 'Order Number:'), ' ', order.orderNumber || 'N/A'),
+                      React.createElement('p', null, React.createElement('strong', null, 'Delivery:'), ' ', order.deliveryMethod || 'N/A'),
+                      React.createElement('p', null, React.createElement('strong', null, 'Dates:'), ' ', order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`),
+                      React.createElement('p', null, React.createElement('strong', null, 'Received:'), ' Yes'),
+                      order.pickedUpBy && React.createElement('p', null, React.createElement('strong', null, 'Picked Up By:'), ' ', order.pickedUpBy),
+                      order.receivedAt && React.createElement('p', null, React.createElement('strong', null, 'Received At:'), ' ', order.receivedAt.toLocaleString()),
+                      order.imageUrl && React.createElement('img', { src: order.imageUrl, alt: 'Order item', className: 'w-full h-32 object-cover rounded mt-2' }),
+                      React.createElement('div', { className: 'mt-4 grid grid-cols-2 gap-2' },
+                        React.createElement('button', {
+                          onClick: () => toggleReceived(order.id, order.received),
+                          className: 'bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors'
+                        }, 'Undo Received'),
+                        React.createElement('button', {
+                          onClick: () => openEditModal(order),
+                          className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors'
+                        }, 'Edit'),
+                        React.createElement('button', {
+                          onClick: () => deleteOrder(order.id),
+                          className: 'bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors'
+                        }, 'Delete'),
+                        React.createElement('button', {
+                          onClick: () => printOrderForm(order),
+                          className: 'bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2'
+                        }, 'Print P.O.')
+                      )
+                    ))
+                )
+              ))
+            ),
+          activeTab === 'archive' && React.createElement('div', { className: 'max-w-4xl mx-auto' },
+            React.createElement('div', { className: 'flex justify-end space-x-2 mb-4' },
+              React.createElement('button', {
+                onClick: () => exportToPDF(archivedOrders, 'Archived Orders'),
+                className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
+                disabled: !firebaseInitialized
+              }, 'Export Archived Orders to PDF')
+            ),
+            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Archived Orders'),
+            Object.keys(groupedArchivedOrders).length === 0 ?
+              React.createElement('p', { className: 'text-gray-600' }, 'No archived orders found.') :
+              Object.keys(groupedArchivedOrders).sort().map(setName => React.createElement('div', { key: setName, className: 'mb-8' },
+                React.createElement('div', { className: 'flex justify-between items-center mb-4' },
+                  React.createElement('h3', { className: 'text-xl font-semibold' }, setName),
+                  React.createElement('button', {
+                    onClick: () => restoreSet(setName),
+                    className: 'bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors',
+                    disabled: !firebaseInitialized
+                  }, 'Restore Set')
+                ),
+                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' },
+                  groupedArchivedOrders[setName].map(order => React.createElement('div', { key: order.id, className: 'bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300' },
+                    React.createElement('h4', { className: 'text-lg font-semibold mb-2' }, order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'),
+                    React.createElement('p', null, React.createElement('strong', null, 'Sets:'), ' ', order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'),
+                    React.createElement('p', null, React.createElement('strong', null, 'Recipients:'), ' ', order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'),
+                    React.createElement('p', null, React.createElement('strong', null, 'Pickup From:'), ' ', order.pickupFrom || 'N/A'),
+                    React.createElement('p', null, React.createElement('strong', null, 'Order Number:'), ' ', order.orderNumber || 'N/A'),
+                    React.createElement('p', null, React.createElement('strong', null, 'Delivery:'), ' ', order.deliveryMethod || 'N/A'),
+                    React.createElement('p', null, React.createElement('strong', null, 'Dates:'), ' ', order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`),
+                    React.createElement('p', null, React.createElement('strong', null, 'Received:'), ' ', order.received ? 'Yes' : 'No'),
+                    order.received && order.pickedUpBy && React.createElement('p', null, React.createElement('strong', null, 'Picked Up By:'), ' ', order.pickedUpBy),
+                    order.received && order.receivedAt && React.createElement('p', null, React.createElement('strong', null, 'Received At:'), ' ', order.receivedAt.toLocaleString()),
+                    order.imageUrl && React.createElement('img', { src: order.imageUrl, alt: 'Order item', className: 'w-full h-32 object-cover rounded mt-2' }),
+                    React.createElement('div', { className: 'mt-4 grid grid-cols-2 gap-2' },
+                      React.createElement('button', {
+                        onClick: () => printOrderForm(order),
+                        className: 'bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2'
+                      }, 'Print P.O.')
+                    )
                   ))
-                )}
-              </div>
-            )}
-            {activeTab === 'archive' && (
-              <div className="max-w-4xl mx-auto">
-                <div className="flex justify-end space-x-2 mb-4">
-                  <button
-                    onClick={() => exportToPDF(archivedOrders, 'Archived Orders')}
-                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
-                    disabled={!firebaseInitialized}
-                  >
-                    Export Archived Orders to PDF
-                  </button>
-                </div>
-                <h2 className="text-2xl font-semibold mb-4">Archived Orders</h2>
-                {Object.keys(groupedArchivedOrders).length === 0 ? (
-                  <p className="text-gray-600">No archived orders found.</p>
-                ) : (
-                  Object.keys(groupedArchivedOrders).sort().map(setName => (
-                    <div key={setName} className="mb-8">
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold">{setName}</h3>
-                        <button
-                          onClick={() => restoreSet(setName)}
-                          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors"
-                          disabled={!firebaseInitialized}
-                        >
-                          Restore Set
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {groupedArchivedOrders[setName].map(order => (
-                          <div key={order.id} className="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300">
-                            <h4 className="text-lg font-semibold mb-2">{order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'}</h4>
-                            <p><strong>Sets:</strong> {order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'}</p>
-                            <p><strong>Recipients:</strong> {order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'}</p>
-                            <p><strong>Pickup From:</strong> {order.pickupFrom || 'N/A'}</p>
-                            <p><strong>Order Number:</strong> {order.orderNumber || 'N/A'}</p>
-                            <p><strong>Delivery:</strong> {order.deliveryMethod || 'N/A'}</p>
-                            <p><strong>Dates:</strong> {order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`}</p>
-                            <p><strong>Received:</strong> {order.received ? 'Yes' : 'No'}</p>
-                            {order.received && order.pickedUpBy && (
-                              <p><strong>Picked Up By:</strong> {order.pickedUpBy}</p>
-                            )}
-                            {order.received && order.receivedAt && (
-                              <p><strong>Received At:</strong> {order.receivedAt.toLocaleString()}</p>
-                            )}
-                            {order.imageUrl && (
-                              <img src={order.imageUrl} alt="Order item" className="w-full h-32 object-cover rounded mt-2" />
-                            )}
-                            <div className="mt-4 grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => printOrderForm(order)}
-                                className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2"
-                              >
-                                Print P.O.
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </ErrorBoundary>
+                )
+              ))
+            )
+        )
       );
     }
     try {
-      ReactDOM.render(<ErrorBoundary><App /></ErrorBoundary>, document.getElementById('root'));
+      ReactDOM.render(React.createElement(ErrorBoundary, null, React.createElement(App)), document.getElementById('root'));
     } catch (error) {
       console.error('React render error:', error.message);
-      document.getElementById('root').innerHTML = '<div className="text-red-500 text-center">Error loading application: ' + error.message + '</div>';
+      document.getElementById('root').innerHTML = `<div class="text-red-500 text-center p-4">Error loading application: ${error.message}</div>`;
     }
   </script>
 </body>

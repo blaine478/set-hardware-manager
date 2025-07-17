@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hardware Tracking</title>
-  <script id="react" src="https://cdn.jsdelivr.net/npm/react@17.0.2/umd/react.production.min.js" defer></script>
-  <script id="react-dom" src="https://cdn.jsdelivr.net/npm/react-dom@17.0.2/umd/react-dom.production.min.js" defer></script>
-  <script id="babel" src="https://cdn.jsdelivr.net/npm/babel-standalone@7.20.0/babel.min.js" defer></script>
   <script id="firebase-app" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script id="firebase-firestore" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <style>
@@ -90,13 +87,10 @@
 <body>
   <div id="root"></div>
   <div id="error" class="error"></div>
-  <script type="text/javascript">
+  <script>
     // Dependency Loading Status
-    window.appStatus = { 
-      react: { loaded: false, error: null },
-      firebase: { loaded: false, error: null },
-      rendering: false
-    };
+    window.appStatus = { firebase: { loaded: false, error: null } };
+    let currentTab = 'incoming';
 
     // Firebase Initialization
     function initializeFirebase(attempts = 0, maxAttempts = 50) {
@@ -104,7 +98,7 @@
         if (attempts >= maxAttempts) {
           console.error("Firebase failed to load after", maxAttempts, "attempts.");
           window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase. Check your network." };
-          checkAllLoaded();
+          renderUI();
           return;
         }
         console.warn("Firebase not loaded yet. Retrying in 100ms... (Attempt", attempts + 1, ")");
@@ -131,198 +125,76 @@
         };
         window.appStatus.firebase = { loaded: true, error: null };
         console.log("Firebase initialized successfully");
-        checkAllLoaded();
+        renderUI();
       } catch (error) {
         console.error("Firebase initialization failed:", error);
         window.appStatus.firebase = { loaded: false, error: "Firebase initialization failed: " + error.message };
-        checkAllLoaded();
+        renderUI();
       }
     }
 
-    // Check if all dependencies are loaded
-    function checkAllLoaded() {
-      if (window.appStatus.react.loaded && window.appStatus.firebase.loaded && !window.appStatus.rendering) {
-        window.appStatus.rendering = true;
-        renderApp();
-      } else if (window.appStatus.react.error || window.appStatus.firebase.error) {
-        document.getElementById('error').innerText = 
-          (window.appStatus.react.error || '') + ' ' + 
-          (window.appStatus.firebase.error || '');
-        renderFallbackUI();
-      } else {
-        document.getElementById('error').innerText = "Loading dependencies...";
-      }
-    }
+    // Render UI
+    function renderUI() {
+      const root = document.getElementById('root');
+      const errorDiv = document.getElementById('error');
+      errorDiv.innerText = window.appStatus.firebase.error || (window.appStatus.firebase.loaded ? '' : 'Loading Firebase...');
 
-    // Script Load Handlers
-    const reactScript = document.getElementById('react');
-    const reactDomScript = document.getElementById('react-dom');
-    const babelScript = document.getElementById('babel');
-    const firebaseAppScript = document.getElementById('firebase-app');
-    const firebaseFirestoreScript = document.getElementById('firebase-firestore');
-    
-    let reactScriptsLoaded = 0;
-    function checkReactLoaded() {
-      reactScriptsLoaded++;
-      if (reactScriptsLoaded === 3) { // React, ReactDOM, Babel
-        if (typeof React !== 'undefined' && typeof ReactDOM !== 'undefined' && typeof Babel !== 'undefined') {
-          window.appStatus.react = { loaded: true, error: null };
-          console.log("React and Babel loaded successfully");
-        } else {
-          window.appStatus.react = { loaded: false, error: "Failed to load React or Babel." };
-          document.getElementById('error').innerText = window.appStatus.react.error;
-        }
-        checkAllLoaded();
-      }
-    }
-
-    let firebaseScriptsLoaded = 0;
-    function checkFirebaseLoaded() {
-      firebaseScriptsLoaded++;
-      if (firebaseScriptsLoaded === 2) { // Firebase App, Firestore
-        initializeFirebase();
-      }
-    }
-
-    reactScript.onload = checkReactLoaded;
-    reactScript.onerror = () => {
-      window.appStatus.react = { loaded: false, error: "Failed to load React script." };
-      checkAllLoaded();
-    };
-    reactDomScript.onload = checkReactLoaded;
-    reactDomScript.onerror = () => {
-      window.appStatus.react = { loaded: false, error: "Failed to load ReactDOM script." };
-      checkAllLoaded();
-    };
-    babelScript.onload = checkReactLoaded;
-    babelScript.onerror = () => {
-      window.appStatus.react = { loaded: false, error: "Failed to load Babel script." };
-      checkAllLoaded();
-    };
-    firebaseAppScript.onload = checkFirebaseLoaded;
-    firebaseAppScript.onerror = () => {
-      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase App script." };
-      checkAllLoaded();
-    };
-    firebaseFirestoreScript.onload = checkFirebaseLoaded;
-    firebaseFirestoreScript.onerror = () => {
-      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase Firestore script." };
-      checkAllLoaded();
-    };
-
-    // Fallback UI
-    function renderFallbackUI() {
-      document.getElementById('root').innerHTML = `
+      root.innerHTML = `
         <div class="header">
           <div class="header-content">
             <h1>Hardware Tracking</h1>
-            <button onclick="document.documentElement.className = document.documentElement.className === 'dark' ? '' : 'dark'">Toggle Dark Mode</button>
+            <button class="toggle-button" onclick="document.documentElement.className = document.documentElement.className === 'dark' ? '' : 'dark'">Toggle Dark Mode</button>
           </div>
           <nav class="nav">
             <div class="tabs">
-              <button class="tab tab-active">Incoming</button>
-              <button class="tab">Received</button>
-              <button class="tab">Archived</button>
-              <button class="tab">Options</button>
+              <button class="tab ${currentTab === 'incoming' ? 'tab-active' : ''}" onclick="setTab('incoming')">Incoming</button>
+              <button class="tab ${currentTab === 'received' ? 'tab-active' : ''}" onclick="setTab('received')">Received</button>
+              <button class="tab ${currentTab === 'archived' ? 'tab-active' : ''}" onclick="setTab('archived')">Archived</button>
+              <button class="tab ${currentTab === 'options' ? 'tab-active' : ''}" onclick="setTab('options')">Options</button>
             </div>
           </nav>
         </div>
         <div class="content">
-          <p>React failed to load. Displaying static UI.</p>
+          ${window.appStatus.firebase.loaded ? `
+            ${currentTab === 'incoming' ? '<p>Incoming items will be displayed here.</p>' : ''}
+            ${currentTab === 'received' ? '<p>Received items will be displayed here.</p>' : ''}
+            ${currentTab === 'archived' ? '<p>Archived sets will be displayed here.</p>' : ''}
+            ${currentTab === 'options' ? '<p>Order form and buyer options will be displayed here.</p>' : ''}
+          ` : `<p class="error">${window.appStatus.firebase.error || 'Loading Firebase...'}</p>`}
         </div>
       `;
     }
 
-    // Timeout for script loading
-    setTimeout(() => {
-      if (!window.appStatus.react.loaded || !window.appStatus.firebase.loaded) {
-        document.getElementById('error').innerText = 
-          (window.appStatus.react.error || 'React not loaded') + ' ' + 
-          (window.appStatus.firebase.error || 'Firebase not loaded');
-        renderFallbackUI();
-      }
-    }, 10000); // 10 seconds
-  </script>
-  <script type="text/babel">
-    const { useState, useEffect } = React;
+    // Tab Switching
+    function setTab(tab) {
+      currentTab = tab;
+      renderUI();
+    }
 
-    // Main App Component
-    const App = () => {
-      const [page, setPage] = useState('incoming');
-      const [darkMode, setDarkMode] = useState(false);
-
-      useEffect(() => {
-        document.documentElement.className = darkMode ? 'dark' : '';
-      }, [darkMode]);
-
-      return (
-        <div>
-          <div className="header">
-            <div className="header-content">
-              <h1>Hardware Tracking</h1>
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="toggle-button"
-              >
-                {darkMode ? 'Light' : 'Dark'}
-              </button>
-            </div>
-            <nav className="nav">
-              <div className="tabs">
-                <button
-                  onClick={() => setPage('incoming')}
-                  className={page === 'incoming' ? 'tab tab-active' : 'tab'}
-                >
-                  Incoming
-                </button>
-                <button
-                  onClick={() => setPage('received')}
-                  className={page === 'received' ? 'tab tab-active' : 'tab'}
-                >
-                  Received
-                </button>
-                <button
-                  onClick={() => setPage('archived')}
-                  className={page === 'archived' ? 'tab tab-active' : 'tab'}
-                >
-                  Archived
-                </button>
-                <button
-                  onClick={() => setPage('options')}
-                  className={page === 'options' ? 'tab tab-active' : 'tab'}
-                >
-                  Options
-                </button>
-              </div>
-            </nav>
-          </div>
-          <div className="content">
-            {window.appStatus.firebase.loaded ? (
-              <>
-                {page === 'incoming' && <p>Incoming items will be displayed here.</p>}
-                {page === 'received' && <p>Received items will be displayed here.</p>}
-                {page === 'archived' && <p>Archived sets will be displayed here.</p>}
-                {page === 'options' && <p>Order form and buyer options will be displayed here.</p>}
-              </>
-            ) : (
-              <p className="error">{window.appStatus.firebase.error || "Loading Firebase..."}</p>
-            )}
-          </div>
-        </div>
-      );
-    };
-
-    // Render App
-    function renderApp() {
-      try {
-        ReactDOM.render(<App />, document.getElementById('root'));
-        document.getElementById('error').innerText = '';
-      } catch (error) {
-        console.error("React rendering failed:", error);
-        document.getElementById('error').innerText = "Failed to render app: " + error.message;
-        renderFallbackUI();
+    // Script Load Handlers
+    const firebaseAppScript = document.getElementById('firebase-app');
+    const firebaseFirestoreScript = document.getElementById('firebase-firestore');
+    let firebaseScriptsLoaded = 0;
+    function checkFirebaseLoaded() {
+      firebaseScriptsLoaded++;
+      if (firebaseScriptsLoaded === 2) {
+        initializeFirebase();
       }
     }
+
+    firebaseAppScript.onload = checkFirebaseLoaded;
+    firebaseAppScript.onerror = () => {
+      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase App script." };
+      renderUI();
+    };
+    firebaseFirestoreScript.onload = checkFirebaseLoaded;
+    firebaseFirestoreScript.onerror = () => {
+      window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase Firestore script." };
+      renderUI();
+    };
+
+    // Initial Render
+    renderUI();
   </script>
 </body>
 </html>

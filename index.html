@@ -93,15 +93,18 @@
     let currentTab = 'incoming';
 
     // Firebase Initialization
-    function initializeFirebase(attempts = 0, maxAttempts = 50) {
+    function initializeFirebase(attempts = 0, maxAttempts = 30) {
+      const errorDiv = document.getElementById('error');
       if (typeof firebase === 'undefined') {
         if (attempts >= maxAttempts) {
           console.error("Firebase failed to load after", maxAttempts, "attempts.");
-          window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase. Check your network." };
+          window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase. Check your network or try again." };
+          errorDiv.innerText = window.appStatus.firebase.error;
           renderUI();
           return;
         }
         console.warn("Firebase not loaded yet. Retrying in 100ms... (Attempt", attempts + 1, ")");
+        errorDiv.innerText = "Loading Firebase... (Attempt " + (attempts + 1) + ")";
         setTimeout(() => initializeFirebase(attempts + 1, maxAttempts), 100);
         return;
       }
@@ -125,10 +128,12 @@
         };
         window.appStatus.firebase = { loaded: true, error: null };
         console.log("Firebase initialized successfully");
+        errorDiv.innerText = '';
         renderUI();
       } catch (error) {
         console.error("Firebase initialization failed:", error);
         window.appStatus.firebase = { loaded: false, error: "Firebase initialization failed: " + error.message };
+        errorDiv.innerText = window.appStatus.firebase.error;
         renderUI();
       }
     }
@@ -137,7 +142,9 @@
     function renderUI() {
       const root = document.getElementById('root');
       const errorDiv = document.getElementById('error');
-      errorDiv.innerText = window.appStatus.firebase.error || (window.appStatus.firebase.loaded ? '' : 'Loading Firebase...');
+      if (!window.appStatus.firebase.loaded && !errorDiv.innerText) {
+        errorDiv.innerText = window.appStatus.firebase.error || 'Loading Firebase...';
+      }
 
       root.innerHTML = `
         <div class="header">
@@ -177,6 +184,7 @@
     let firebaseScriptsLoaded = 0;
     function checkFirebaseLoaded() {
       firebaseScriptsLoaded++;
+      console.log("Firebase script loaded, count:", firebaseScriptsLoaded);
       if (firebaseScriptsLoaded === 2) {
         initializeFirebase();
       }
@@ -184,12 +192,16 @@
 
     firebaseAppScript.onload = checkFirebaseLoaded;
     firebaseAppScript.onerror = () => {
+      console.error("Failed to load Firebase App script.");
       window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase App script." };
+      document.getElementById('error').innerText = window.appStatus.firebase.error;
       renderUI();
     };
     firebaseFirestoreScript.onload = checkFirebaseLoaded;
     firebaseFirestoreScript.onerror = () => {
+      console.error("Failed to load Firebase Firestore script.");
       window.appStatus.firebase = { loaded: false, error: "Failed to load Firebase Firestore script." };
+      document.getElementById('error').innerText = window.appStatus.firebase.error;
       renderUI();
     };
 

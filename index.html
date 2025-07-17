@@ -268,6 +268,18 @@
                 db.collection('receivers').doc(id).delete();
             };
 
+            const handleSetKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    addSet();
+                }
+            };
+
+            const handleReceiverKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    addReceiver();
+                }
+            };
+
             const filteredOrders = orders.filter(order => {
                 if (tab === 'Incoming') return order.status === 'ordered';
                 if (tab === 'Received') return order.status === 'received';
@@ -308,7 +320,12 @@
                         <div className="settings-section">
                             <h2>Set Names</h2>
                             <div className="input-group">
-                                <input value={newSetName} onChange={e => setNewSetName(e.target.value)} placeholder="New Set Name" />
+                                <input 
+                                    value={newSetName} 
+                                    onChange={e => setNewSetName(e.target.value)} 
+                                    onKeyDown={handleSetKeyDown}
+                                    placeholder="New Set Name" 
+                                />
                                 <button className="add-button" onClick={addSet}>Add</button>
                             </div>
                             <ul>
@@ -322,7 +339,12 @@
 
                             <h2>Receiver Names</h2>
                             <div className="input-group">
-                                <input value={newReceiverName} onChange={e => setNewReceiverName(e.target.value)} placeholder="New Receiver Name" />
+                                <input 
+                                    value={newReceiverName} 
+                                    onChange={e => setNewReceiverName(e.target.value)} 
+                                    onKeyDown={handleReceiverKeyDown}
+                                    placeholder="New Receiver Name" 
+                                />
                                 <button className="add-button" onClick={addReceiver}>Add</button>
                             </div>
                             <ul>

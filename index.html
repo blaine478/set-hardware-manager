@@ -3,26 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Basic Hardware Tracker</title>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <title>Hardware Tracking</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/babel-standalone@7.22.9/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script id="firebase-app" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script id="firebase-firestore" src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .error { color: red; }
-    .loading { color: blue; }
-    .item { margin: 10px 0; }
-    input, button { margin: 5px; padding: 5px; }
+    body { font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .tab { transition: background-color 0.3s, color 0.3s; }
+    .tab:hover { background-color: rgba(255, 255, 255, 0.1); }
+    .tab-active { background-color: #3b82f6; color: white; }
   </style>
 </head>
-<body>
-  <h1>Basic Hardware Tracker</h1>
-  <div id="status"></div>
-  <div id="items"></div>
-  <div>
-    <input type="text" id="description" placeholder="Enter item description">
-    <button onclick="addItem()">Add Item</button>
-  </div>
-  <script>
+<body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+  <div id="root" class="min-h-screen"></div>
+  <script type="text/javascript">
     // Firebase Initialization
     window.firebaseStatus = { loading: true, error: null };
     function initializeFirebase(attempts = 0, maxAttempts = 50) {
@@ -30,7 +29,7 @@
         if (attempts >= maxAttempts) {
           console.error("Firebase failed to load after", maxAttempts, "attempts.");
           window.firebaseStatus = { loading: false, error: "Failed to load Firebase. Check your network or try again." };
-          updateStatus();
+          renderApp();
           return;
         }
         console.warn("Firebase not loaded yet. Retrying in 100ms... (Attempt", attempts + 1, ")");
@@ -52,74 +51,92 @@
           collection: firebase.firestore.collection,
           addDoc: (collectionRef, data) => collectionRef.add(data),
           getDocs: (collectionRef) => collectionRef.get(),
+          updateDoc: (docRef, data) => docRef.update(data),
           doc: firebase.firestore.doc
         };
         window.firebaseStatus = { loading: false, error: null };
         console.log("Firebase initialized successfully");
-        updateStatus();
-        fetchItems();
+        renderApp();
       } catch (error) {
         console.error("Firebase initialization failed:", error);
         window.firebaseStatus = { loading: false, error: "Firebase initialization failed: " + error.message };
-        updateStatus();
+        renderApp();
       }
     }
 
-    // Update Status Display
-    function updateStatus() {
-      const statusDiv = document.getElementById('status');
-      if (window.firebaseStatus.loading) {
-        statusDiv.innerHTML = '<p class="loading">Loading Firebase...</p>';
-      } else if (window.firebaseStatus.error) {
-        statusDiv.innerHTML = '<p class="error">' + window.firebaseStatus.error + '</p>';
-      } else {
-        statusDiv.innerHTML = '<p>Firebase ready!</p>';
+    // Wait for Firebase scripts to load
+    const firebaseAppScript = document.getElementById('firebase-app');
+    const firebaseFirestoreScript = document.getElementById('firebase-firestore');
+    let scriptsLoaded = 0;
+    function checkScriptsLoaded() {
+      scriptsLoaded++;
+      if (scriptsLoaded === 2) {
+        initializeFirebase();
       }
     }
+    firebaseAppScript.onload = checkScriptsLoaded;
+    firebaseFirestoreScript.onload = checkScriptsLoaded;
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
 
-    // Fetch and Display Items
-    async function fetchItems() {
-      const itemsDiv = document.getElementById('items');
-      try {
-        if (window.firebaseStatus.error) throw new Error(window.firebaseStatus.error);
-        if (!window.firebase.db) throw new Error("Firebase database not initialized.");
-        const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
-        itemsDiv.innerHTML = '';
-        querySnapshot.forEach(doc => {
-          const item = doc.data();
-          itemsDiv.innerHTML += `<div class="item">ID: ${item.id}, Description: ${item.description}</div>`;
-        });
-      } catch (error) {
-        console.error("Error fetching items:", error);
-        itemsDiv.innerHTML = '<p class="error">Failed to load items: ' + error.message + '</p>';
-      }
+    // Main App Component
+    const App = () => {
+      const [page, setPage] = useState('incoming');
+      const [darkMode, setDarkMode] = useState(false);
+
+      useEffect(() => {
+        document.body.className = darkMode ? 'bg-gray-900' : 'bg-gray-50';
+      }, [darkMode]);
+
+      return (
+        <div className="min-h-screen">
+          <header className="fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-md z-10">
+            <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Hardware Tracking</h1>
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white px-3 py-1 rounded-full text-sm"
+              >
+                {darkMode ? 'Light' : 'Dark'}
+              </button>
+            </div>
+            <nav className="container mx-auto px-6 pb-4">
+              <div className="flex space-x-4">
+                {['incoming', 'received', 'archived', 'options'].map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setPage(tab)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 tab ${page === tab ? 'tab-active' : ''}`}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </nav>
+          </header>
+          <div className="pt-32 pb-6">
+            {window.firebaseStatus.loading ? (
+              <div className="container mx-auto p-6 text-center text-gray-600 dark:text-gray-300">Loading Firebase...</div>
+            ) : window.firebaseStatus.error ? (
+              <div className="container mx-auto p-6 text-center text-red-500">{window.firebaseStatus.error}</div>
+            ) : (
+              <div className="container mx-auto p-6 fade-in">
+                {page === 'incoming' && <p className="text-gray-800 dark:text-gray-200">Incoming items will be displayed here.</p>}
+                {page === 'received' && <p className="text-gray-800 dark:text-gray-200">Received items will be displayed here.</p>}
+                {page === 'archived' && <p className="text-gray-800 dark:text-gray-200">Archived sets will be displayed here.</p>}
+                {page === 'options' && <p className="text-gray-800 dark:text-gray-200">Order form and buyer options will be displayed here.</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // Render App after Firebase Status is Resolved
+    function renderApp() {
+      ReactDOM.render(<App />, document.getElementById('root'));
     }
-
-    // Add New Item
-    async function addItem() {
-      const descriptionInput = document.getElementById('description');
-      const description = descriptionInput.value.trim();
-      if (!description) {
-        alert("Please enter a description.");
-        return;
-      }
-      try {
-        if (window.firebaseStatus.error) throw new Error(window.firebaseStatus.error);
-        const newItem = {
-          id: 'H' + Math.floor(1000 + Math.random() * 9000),
-          description
-        };
-        await window.firebase.db.collection('items').doc(newItem.id).set(newItem);
-        descriptionInput.value = '';
-        fetchItems();
-      } catch (error) {
-        console.error("Error adding item:", error);
-        document.getElementById('items').innerHTML = '<p class="error">Failed to add item: ' + error.message + '</p>';
-      }
-    }
-
-    // Initialize Firebase
-    initializeFirebase();
   </script>
 </body>
 </html>

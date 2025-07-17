@@ -1,23 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Basic Hardware Tracker</title>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .error { color: red; }
+    .loading { color: blue; }
+    .item { margin: 10px 0; }
+    input, button { margin: 5px; padding: 5px; }
+  </style>
 </head>
 <body>
+  <h1>Basic Hardware Tracker</h1>
+  <div id="status"></div>
+  <div id="items"></div>
+  <div>
+    <input type="text" id="description" placeholder="Enter item description">
+    <button onclick="addItem()">Add Item</button>
+  </div>
   <script>
-    console.log("Firebase defined:", typeof firebase !== 'undefined');
-    firebase.initializeApp({
-      apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
-      authDomain: "set-hardware.firebaseapp.com",
-      projectId: "set-hardware",
-      storageBucket: "set-hardware.firebasestorage.app",
-      messagingSenderId: "613195230835",
-      appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
-    });
-    firebase.firestore().collection('test').add({ test: 'data' })
-      .then(() => console.log('Success'))
-      .catch(e => console.error('Error:', e));
+    // Firebase Initialization
+    window.firebaseStatus = { loading: true, error: null };
+    function initializeFirebase(attempts = 0, maxAttempts = 50) {
+      if (typeof firebase === 'undefined') {
+        if (attempts >= maxAttempts) {
+          console.error("Firebase failed to load after", maxAttempts, "attempts.");
+          window.firebaseStatus = { loading: false, error: "Failed to load Firebase. Check your network or try again." };
+          updateStatus();
+          return;
+        }
+        console.warn("Firebase not loaded yet. Retrying in 100ms... (Attempt", attempts + 1, ")");
+        setTimeout(() => initializeFirebase(attempts + 1, maxAttempts), 100);
+        return;
+      }
+      try {
+        const firebaseConfig = {
+          apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
+          authDomain: "set-hardware.firebaseapp.com",
+          projectId: "set-hardware",
+          storageBucket: "set-hardware.firebasestorage.app",
+          messagingSenderId: "613195230835",
+          appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
+        };
+        firebase.initializeApp(firebaseConfig);
+        window.firebase = {
+          db: firebase.firestore(),
+          collection: firebase.firestore.collection,
+          addDoc: (collectionRef, data) => collectionRef.add(data),
+          getDocs: (collectionRef) => collectionRef.get(),
+          doc: firebase.firestore.doc
+        };
+        window.firebaseStatus = { loading: false, error: null };
+        console.log("Firebase initialized successfully");
+        updateStatus();
+        fetchItems();
+      } catch (error) {
+        console.error("Firebase initialization failed:", error);
+        window.firebaseStatus = { loading: false, error: "Firebase initialization failed: " + error.message };
+        updateStatus();
+      }
+    }
+
+    // Update Status Display
+    function updateStatus() {
+      const statusDiv = document.getElementById('status');
+      if (window.firebaseStatus.loading) {
+        statusDiv.innerHTML = '<p class="loading">Loading Firebase...</p>';
+      } else if (window.firebaseStatus.error) {
+        statusDiv.innerHTML = '<p class="error">' + window.firebaseStatus.error + '</p>';
+      } else {
+        statusDiv.innerHTML = '<p>Firebase ready!</p>';
+      }
+    }
+
+    // Fetch and Display Items
+    async function fetchItems() {
+      const itemsDiv = document.getElementById('items');
+      try {
+        if (window.firebaseStatus.error) throw new Error(window.firebaseStatus.error);
+        if (!window.firebase.db) throw new Error("Firebase database not initialized.");
+        const querySnapshot = await window.firebase.getDocs(window.firebase.db.collection('items'));
+        itemsDiv.innerHTML = '';
+        querySnapshot.forEach(doc => {
+          const item = doc.data();
+          itemsDiv.innerHTML += `<div class="item">ID: ${item.id}, Description: ${item.description}</div>`;
+        });
+      } catch (error) {
+        console.error("Error fetching items:", error);
+        itemsDiv.innerHTML = '<p class="error">Failed to load items: ' + error.message + '</p>';
+      }
+    }
+
+    // Add New Item
+    async function addItem() {
+      const descriptionInput = document.getElementById('description');
+      const description = descriptionInput.value.trim();
+      if (!description) {
+        alert("Please enter a description.");
+        return;
+      }
+      try {
+        if (window.firebaseStatus.error) throw new Error(window.firebaseStatus.error);
+        const newItem = {
+          id: 'H' + Math.floor(1000 + Math.random() * 9000),
+          description
+        };
+        await window.firebase.db.collection('items').doc(newItem.id).set(newItem);
+        descriptionInput.value = '';
+        fetchItems();
+      } catch (error) {
+        console.error("Error adding item:", error);
+        document.getElementById('items').innerHTML = '<p class="error">Failed to add item: ' + error.message + '</p>';
+      }
+    }
+
+    // Initialize Firebase
+    initializeFirebase();
   </script>
 </body>
 </html>

@@ -161,6 +161,11 @@
             font-size: 18px;
             color: #007aff;
         }
+        .no-orders {
+            text-align: center;
+            color: #6e6e73;
+            margin: 20px 0;
+        }
         .delete-button {
             background-color: #ff3b30;
             padding: 4px 8px;
@@ -282,9 +287,9 @@
             const [filterDescription, setFilterDescription] = useState('');
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
-            const emailjsServiceId = 'service_bg5walm'; // Replace with your EmailJS service ID
-            const emailjsTemplateId = 'template_1o195q5'; // Replace with your EmailJS template ID
-            const emailjsUserId = 'ICj93ODAq4-LL3yO5'; // Replace with your EmailJS user ID
+            const emailjsServiceId = 'service_bg5walm'; // Your service ID
+            const emailjsTemplateId = 'template_1o195q5'; // Replace with your template ID after creation
+            const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Your public key
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -303,7 +308,7 @@
             const db = firebase.firestore();
 
             useEffect(() => {
-                emailjs.init(emailjsUserId); // Initialize EmailJS
+                emailjs.init(emailjsPublicKey); // Initialize EmailJS with your public key
                 const handleAuth = () => {
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
@@ -383,7 +388,7 @@
                     doc.text(`- ${it.item} (Set: ${it.set})`, 10, 80 + (idx * 10));
                 });
                 doc.text(`Description: ${orderData.description}`, 10, 80 + (orderData.items.length * 10));
-                return doc.output('datauristring').split(',')[1]; // Base64 string
+                return doc.output('datauristring').split(',')[1]; // Base64
             };
 
             const handleOrder = async () => {
@@ -406,14 +411,13 @@
                         orderData.deliveryEndDate = deliveryEndDate;
                     }
                     const docRef = await db.collection('orders').add(orderData);
-                    // Generate PDF base64
                     const pdfBase64 = generatePDFBase64(orderData);
                     // Send email with EmailJS
                     await emailjs.send(emailjsServiceId, emailjsTemplateId, {
                         subject: `Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`,
                         body: `Summary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}`,
-                        attachment: pdfBase64,
-                        filename: `order_${orderNumber}.pdf`
+                        pdf_content: pdfBase64,
+                        pdf_filename: `order_${orderNumber}.pdf`
                     });
                     // Reset form
                     setItems([{ item: '', set: '' }]);
@@ -740,6 +744,7 @@
                                     <button className="archive-button" style={{width: 'auto', marginLeft: '10px'}} onClick={handleArchiveAll}>Archive</button>
                                 </div>
                             )}
+                            {filteredOrders.length === 0 && <p className="no-orders">No orders in this tab.</p>}
                             <ul className="order-list">
                                 {filteredOrders.map(order => (
                                     <li key={order.id} className="order-item">

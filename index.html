@@ -3,1200 +3,415 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Movie Hardware Order App</title>
+  <title>Set Hardware Tracker</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
-    window.firebase = { initializeApp, getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, query, where, getDocs, writeBatch, Timestamp, getStorage, ref, uploadBytes, getDownloadURL };
-  </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.3/jspdf.plugin.autotable.min.js"></script>
-  <link href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.6/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/javascript">
-    const { useState, useEffect } = React;
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    const { initializeApp } = firebase;
+    const { getFirestore, collection, addDoc, getDocs, updateDoc, doc, onSnapshot } = firebase.firestore;
+    const { getAuth, onAuthStateChanged, signInAnonymously } = firebase.auth;
     const { jsPDF } = window.jspdf;
+
     const firebaseConfig = {
       apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
       authDomain: "set-hardware.firebaseapp.com",
       projectId: "set-hardware",
       storageBucket: "set-hardware.firebasestorage.app",
       messagingSenderId: "613195230835",
-      appId: "1:613195230835:web:5dfaaf04dafa06d06ec406"
+      appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
     };
-    let db, storage;
-    let firebaseInitialized = false;
-    try {
-      const app = firebase.initializeApp(firebaseConfig);
-      db = firebase.getFirestore(app);
-      storage = firebase.getStorage(app);
-      firebaseInitialized = true;
-    } catch (error) {
-      console.error('Firebase initialization error:', error.message);
-      document.getElementById('root').innerHTML = `<div class="text-red-500 text-center p-4">Failed to initialize Firebase: ${error.message}. Please check your Firebase configuration.</div>`;
-    }
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
     function ErrorBoundary({ children }) {
-      const [hasError, setHasError] = useState(false);
-      const [errorMessage, setErrorMessage] = useState('');
-      useEffect(() => {
-        const errorHandler = (error) => {
-          console.error('Error in component:', error.message);
-          setHasError(true);
-          setErrorMessage(error.message);
-        };
-        window.addEventListener('error', errorHandler);
-        return () => window.removeEventListener('error', errorHandler);
-      }, []);
-      if (hasError) {
-        return React.createElement('div', { className: 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 text-center' }, `Error rendering component: ${errorMessage}. Please refresh the page or check the console for details.`);
+      const [error, setError] = useState(null);
+      if (error) {
+        return (
+          <div className="p-4 bg-red-100 text-red-700 rounded-lg text-center">
+            <p>An error occurred: {error.message}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reload App
+            </button>
+          </div>
+        );
       }
       return children;
     }
+
     function App() {
-      const [activeTab, setActiveTab] = useState('home');
-      const [formData, setFormData] = useState({
-        items: [{ itemName: '', set: '', recipient: '' }],
-        pickupFrom: '',
-        orderNumber: '',
-        deliveryMethod: 'shipped',
-        startDate: '',
-        endDate: '',
-        deliveryDate: '',
-        applyToAll: false,
-        allSet: '',
-        allRecipient: '',
-        received: false,
-        pickedUpBy: '',
-        receivedAt: null
-      });
-      const [image, setImage] = useState(null);
       const [orders, setOrders] = useState([]);
-      const [archivedOrders, setArchivedOrders] = useState([]);
-      const [sets, setSets] = useState([]);
-      const [recipients, setRecipients] = useState([]);
-      const [newSet, setNewSet] = useState('');
-      const [newRecipient, setNewRecipient] = useState('');
-      const [uploading, setUploading] = useState(false);
+      const [newOrder, setNewOrder] = useState({ setNumber: '', items: [{ name: '', for: '', deliveryDate: '' }], pickupPerson: '', pickupTime: '' });
+      const [showArchived, setShowArchived] = useState(false);
+      const [expandedOrder, setExpandedOrder] = useState(null);
       const [error, setError] = useState(null);
-      const [showReceivedModal, setShowReceivedModal] = useState(false);
-      const [receivedOrderId, setReceivedOrderId] = useState(null);
-      const [pickedUpBy, setPickedUpBy] = useState('');
-      const [editOrder, setEditOrder] = useState(null);
-      const [recipientFilter, setRecipientFilter] = useState('');
+      const [searchTerm, setSearchTerm] = useState('');
+      const [setNumbers, setSetNumbers] = useState([]);
+      const [recipients, setRecipients] = useState([]);
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+
       useEffect(() => {
-        if (!firebaseInitialized || !db) {
-          setError('Firestore database not initialized. Please check Firebase configuration.');
-          return;
-        }
-        const unsubscribeOrders = firebase.onSnapshot(firebase.collection(db, 'orders'), (snapshot) => {
-          const ordersData = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              receivedAt: data.receivedAt ? data.receivedAt.toDate() : null,
-              timestamp: data.timestamp ? data.timestamp.toDate() : null
-            };
-          });
-          setOrders(ordersData);
-        }, (err) => {
-          console.error('Firestore fetch error (orders):', err.message, err.code);
-          setError(`Failed to fetch orders: ${err.message} (Code: ${err.code})`);
+        const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+          if (currentUser) {
+            setUser(currentUser);
+            setLoading(false);
+          } else {
+            signInAnonymously(auth).catch(err => {
+              setError('Authentication failed. Please try again.');
+              console.error(err);
+            });
+          }
         });
-        const unsubscribeArchived = firebase.onSnapshot(firebase.collection(db, 'archive'), (snapshot) => {
-          const archivedData = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              receivedAt: data.receivedAt ? data.receivedAt.toDate() : null,
-              timestamp: data.timestamp ? data.timestamp.toDate() : null,
-              archivedAt: data.archivedAt ? data.archivedAt.toDate() : null
-            };
-          });
-          setArchivedOrders(archivedData);
-        }, (err) => {
-          console.error('Firestore fetch error (archive):', err.message, err.code);
-          setError(`Failed to fetch archived orders: ${err.message} (Code: ${err.code})`);
-        });
-        const unsubscribeSets = firebase.onSnapshot(firebase.collection(db, 'sets'), (snapshot) => {
-          const setsData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            name: doc.data().name || ''
-          }));
-          setSets(setsData);
-        }, (err) => {
-          console.error('Firestore fetch error (sets):', err.message, err.code);
-          setError(`Failed to fetch sets: ${err.message} (Code: ${err.code})`);
-        });
-        const unsubscribeRecipients = firebase.onSnapshot(firebase.collection(db, 'recipients'), (snapshot) => {
-          const recipientsData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            name: doc.data().name || ''
-          }));
-          setRecipients(recipientsData);
-        }, (err) => {
-          console.error('Firestore fetch error (recipients):', err.message, err.code);
-          setError(`Failed to fetch recipients: ${err.message} (Code: ${err.code})`);
-        });
-        return () => {
-          unsubscribeOrders();
-          unsubscribeArchived();
-          unsubscribeSets();
-          unsubscribeRecipients();
-        };
+        return () => unsubscribeAuth();
       }, []);
-      const handleInputChange = (e, index) => {
-        const { name, value } = e.target;
-        if (name === 'itemName' || name === 'set' || name === 'recipient') {
-          const updatedItems = [...formData.items];
-          updatedItems[index] = { ...updatedItems[index], [name]: value };
-          setFormData(prev => ({ ...prev, items: updatedItems }));
-        } else if (name === 'allSet' || name === 'allRecipient') {
-          setFormData(prev => ({ ...prev, [name]: value }));
-        } else {
-          setFormData(prev => ({ ...prev, [name]: value }));
+
+      const fetchOrders = useCallback(() => {
+        const unsubscribe = onSnapshot(collection(db, 'orders'), (snapshot) => {
+          try {
+            const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setOrders(ordersData);
+            const uniqueSetNumbers = [...new Set(ordersData.map(order => order.setNumber))];
+            const uniqueRecipients = [...new Set(ordersData.flatMap(order => order.items.map(item => item.for)))];
+            setSetNumbers(uniqueSetNumbers);
+            setRecipients(uniqueRecipients);
+            setError(null);
+          } catch (err) {
+            setError('Failed to fetch orders. Please try again.');
+            console.error(err);
+          }
+        }, (err) => {
+          setError('Failed to listen for orders. Please try again.');
+          console.error(err);
+        });
+        return unsubscribe;
+      }, []);
+
+      useEffect(() => {
+        if (user) {
+          const unsubscribe = fetchOrders();
+          return () => unsubscribe();
+        }
+      }, [user, fetchOrders]);
+
+      const addOrder = async () => {
+        if (!newOrder.setNumber || !newOrder.items.every(item => item.name && item.for && item.deliveryDate)) {
+          setError('Please fill in all item details.');
+          return;
+        }
+        try {
+          await addDoc(collection(db, 'orders'), { ...newOrder, archived: false, createdAt: new Date().toISOString() });
+          setNewOrder({ setNumber: '', items: [{ name: '', for: '', deliveryDate: '' }], pickupPerson: '', pickupTime: '' });
+          setError(null);
+        } catch (err) {
+          setError('Failed to add order. Please try again.');
+          console.error(err);
         }
       };
-      const handleEditInputChange = (e, index) => {
-        const { name, value } = e.target;
-        if (name === 'itemName' || name === 'set' || name === 'recipient') {
-          const updatedItems = [...editOrder.items];
-          updatedItems[index] = { ...updatedItems[index], [name]: value };
-          setEditOrder(prev => ({ ...prev, items: updatedItems }));
-        } else if (name === 'allSet' || name === 'allRecipient') {
-          setEditOrder(prev => ({ ...prev, [name]: value }));
-        } else {
-          setEditOrder(prev => ({ ...prev, [name]: value }));
+
+      const markPickedUp = async (orderId, pickupPerson) => {
+        if (!pickupPerson) {
+          setError('Please enter a pickup person.');
+          return;
+        }
+        try {
+          const orderRef = doc(db, 'orders', orderId);
+          await updateDoc(orderRef, { pickupPerson, pickupTime: new Date().toISOString() });
+          setError(null);
+          // Simulated notification (replace with actual email/SMS service in production)
+          console.log(`Notification: Order ${orderId} picked up by ${pickupPerson}`);
+        } catch (err) {
+          setError('Failed to mark as picked up. Please try again.');
+          console.error(err);
         }
       };
-      const addItem = () => {
-        setFormData(prev => ({
-          ...prev,
-          items: [...prev.items, { itemName: '', set: '', recipient: '' }]
-        }));
+
+      const toggleArchive = async (orderId, archived) => {
+        try {
+          const orderRef = doc(db, 'orders', orderId);
+          await updateDoc(orderRef, { archived });
+          setError(null);
+        } catch (err) {
+          setError('Failed to update archive status. Please try again.');
+          console.error(err);
+        }
       };
+
+      const generatePDF = (order) => {
+        try {
+          const doc = new jsPDF();
+          doc.setFont("helvetica", "bold");
+          doc.text("Set Hardware Order", 105, 20, { align: "center" });
+          doc.setFont("helvetica", "normal");
+          doc.text(`Set Number: ${order.setNumber}`, 20, 40);
+          doc.text(`Created: ${new Date(order.createdAt).toLocaleDateString()}`, 20, 50);
+          doc.text("Items:", 20, 60);
+          order.items.forEach((item, index) => {
+            doc.text(`${index + 1}. ${item.name} for ${item.for} (Expected: ${item.deliveryDate})`, 30, 70 + index * 10);
+          });
+          if (order.pickupPerson) {
+            doc.text(`Picked Up By: ${order.pickupPerson}`, 20, 80 + order.items.length * 10);
+            doc.text(`Pickup Time: ${new Date(order.pickupTime).toLocaleString()}`, 20, 90 + order.items.length * 10);
+          }
+          doc.save(`order_${order.setNumber}_${new Date().toISOString().split('T')[0]}.pdf`);
+          setError(null);
+        } catch (err) {
+          setError('Failed to generate PDF. Please try again.');
+          console.error(err);
+        }
+      };
+
+      const generateBatchPDF = () => {
+        try {
+          const doc = new jsPDF();
+          let yOffset = 20;
+          const filteredOrders = orders.filter(order => 
+            (showArchived ? order.archived : !order.archived) &&
+            (order.setNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             order.items.some(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())))
+          );
+          
+          filteredOrders.forEach((order, index) => {
+            if (index > 0) doc.addPage();
+            doc.setFont("helvetica", "bold");
+            doc.text(`Set Hardware Order - Set ${order.setNumber}`, 105, yOffset, { align: "center" });
+            doc.setFont("helvetica", "normal");
+            doc.text(`Created: ${new Date(order.createdAt).toLocaleDateString()}`, 20, yOffset + 10);
+            doc.text("Items:", 20, yOffset + 20);
+            order.items.forEach((item, itemIndex) => {
+              doc.text(`${itemIndex + 1}. ${item.name} for ${item.for} (Expected: ${item.deliveryDate})`, 30, yOffset + 30 + itemIndex * 10);
+            });
+            if (order.pickupPerson) {
+              doc.text(`Picked Up By: ${order.pickupPerson}`, 20, yOffset + 40 + order.items.length * 10);
+              doc.text(`Pickup Time: ${new Date(order.pickupTime).toLocaleString()}`, 20, yOffset + 50 + order.items.length * 10);
+            }
+            yOffset = 20;
+          });
+          doc.save(`batch_orders_${new Date().toISOString().split('T')[0]}.pdf`);
+          setError(null);
+        } catch (err) {
+          setError('Failed to generate batch PDF. Please try again.');
+          console.error(err);
+        }
+      };
+
+      const addItemToOrder = () => {
+        setNewOrder({ ...newOrder, items: [...newOrder.items, { name: '', for: '', deliveryDate: '' }] });
+      };
+
+      const updateItem = (index, field, value) => {
+        const updatedItems = [...newOrder.items];
+        updatedItems[index][field] = value;
+        setNewOrder({ ...newOrder, items: updatedItems });
+      };
+
       const removeItem = (index) => {
-        setFormData(prev => ({
-          ...prev,
-          items: prev.items.filter((_, i) => i !== index)
-        }));
-      };
-      const addEditItem = () => {
-        setEditOrder(prev => ({
-          ...prev,
-          items: [...prev.items, { itemName: '', set: '', recipient: '' }]
-        }));
-      };
-      const removeEditItem = (index) => {
-        setEditOrder(prev => ({
-          ...prev,
-          items: prev.items.filter((_, i) => i !== index)
-        }));
-      };
-      const applyToAllItems = () => {
-        if (formData.applyToAll && formData.allSet && formData.allRecipient) {
-          const updatedItems = formData.items.map(item => ({
-            ...item,
-            set: formData.allSet,
-            recipient: formData.allRecipient
-          }));
-          setFormData(prev => ({ ...prev, items: updatedItems }));
+        if (newOrder.items.length > 1) {
+          const updatedItems = newOrder.items.filter((_, i) => i !== index);
+          setNewOrder({ ...newOrder, items: updatedItems });
         }
       };
-      const applyToAllEditItems = () => {
-        if (editOrder.applyToAll && editOrder.allSet && editOrder.allRecipient) {
-          const updatedItems = editOrder.items.map(item => ({
-            ...item,
-            set: editOrder.allSet,
-            recipient: editOrder.allRecipient
-          }));
-          setEditOrder(prev => ({ ...prev, items: updatedItems }));
-        }
-      };
-      const handleImageChange = (e) => {
-        if (e.target.files[0]) {
-          const file = e.target.files[0];
-          if (file.size > 5 * 1024 * 1024) {
-            setError('Image file is too large. Please select a file under 5MB.');
-            return;
-          }
-          setImage(file);
-        }
-      };
-      const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!firebaseInitialized || !db || !storage) {
-          setError('Firebase not initialized. Check configuration.');
-          setUploading(false);
-          return;
-        }
-        if (formData.items.some(item => !item.itemName || !item.set || !item.recipient)) {
-          setError('All items must have a name, set, and recipient.');
-          setUploading(false);
-          return;
-        }
-        setUploading(true);
-        setError(null);
-        try {
-          let imageUrl = formData.imageUrl || '';
-          if (image) {
-            const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
-            await firebase.uploadBytes(storageRef, image);
-            imageUrl = await firebase.getDownloadURL(storageRef);
-          }
-          const orderData = {
-            ...formData,
-            imageUrl,
-            timestamp: firebase.Timestamp.fromDate(new Date())
-          };
-          const docRef = await firebase.addDoc(firebase.collection(db, 'orders'), orderData);
-          setFormData({
-            items: [{ itemName: '', set: '', recipient: '' }],
-            pickupFrom: '',
-            orderNumber: '',
-            deliveryMethod: 'shipped',
-            startDate: '',
-            endDate: '',
-            deliveryDate: '',
-            applyToAll: false,
-            allSet: '',
-            allRecipient: '',
-            received: false,
-            pickedUpBy: '',
-            receivedAt: null
-          });
-          setImage(null);
-          document.querySelector('input[type="file"]').value = '';
-          alert('Order submitted successfully!');
-        } catch (error) {
-          console.error('Error submitting order:', error.message, error.code);
-          setError(`Error submitting order: ${error.message} (Code: ${error.code})`);
-        } finally {
-          setUploading(false);
-        }
-      };
-      const openReceivedModal = (orderId) => {
-        setReceivedOrderId(orderId);
-        setPickedUpBy('');
-        setShowReceivedModal(true);
-      };
-      const closeReceivedModal = () => {
-        setShowReceivedModal(false);
-        setReceivedOrderId(null);
-        setPickedUpBy('');
-      };
-      const confirmReceived = async () => {
-        if (!firebaseInitialized || !db || !receivedOrderId || !pickedUpBy) {
-          setError('Cannot mark as received: Firebase not initialized or pickup person not selected.');
-          return;
-        }
-        try {
-          const receivedAt = firebase.Timestamp.fromDate(new Date());
-          await firebase.updateDoc(firebase.doc(db, 'orders', receivedOrderId), {
-            received: true,
-            pickedUpBy,
-            receivedAt
-          });
-          closeReceivedModal();
-          alert('Order marked as received!');
-        } catch (error) {
-          console.error('Error marking order as received:', error.message, error.code);
-          setError(`Error marking order as received: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const toggleReceived = async (id, currentStatus) => {
-        if (!firebaseInitialized || !db) {
-          setError('Firebase not initialized.');
-          return;
-        }
-        try {
-          await firebase.updateDoc(firebase.doc(db, 'orders', id), {
-            received: !currentStatus,
-            pickedUpBy: !currentStatus ? '' : '',
-            receivedAt: !currentStatus ? null : null
-          });
-        } catch (error) {
-          console.error('Error updating received status:', error.message, error.code);
-          setError(`Error updating status: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const deleteOrder = async (id) => {
-        if (!firebaseInitialized || !db) {
-          setError('Firebase not initialized.');
-          return;
-        }
-        if (!window.confirm('Are you sure you want to delete this order? This action cannot be undone.')) return;
-        try {
-          await firebase.deleteDoc(firebase.doc(db, 'orders', id));
-        } catch (error) {
-          console.error('Error deleting order:', error.message, error.code);
-          setError(`Error deleting order: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const openEditModal = (order) => {
-        setEditOrder({
-          id: order.id,
-          items: order.items || [{ itemName: '', set: '', recipient: '' }],
-          pickupFrom: order.pickupFrom || '',
-          orderNumber: order.orderNumber || '',
-          deliveryMethod: order.deliveryMethod || 'shipped',
-          startDate: order.startDate || '',
-          endDate: order.endDate || '',
-          deliveryDate: order.deliveryDate || '',
-          applyToAll: false,
-          allSet: '',
-          allRecipient: '',
-          imageUrl: order.imageUrl || ''
-        });
-        setImage(null);
-      };
-      const closeEditModal = () => {
-        setEditOrder(null);
-        setImage(null);
-      };
-      const handleEditSubmit = async (e) => {
-        e.preventDefault();
-        if (!firebaseInitialized || !db || !storage) {
-          setError('Firebase not initialized.');
-          return;
-        }
-        if (editOrder.items.some(item => !item.itemName || !item.set || !item.recipient)) {
-          setError('All items must have a name, set, and recipient.');
-          return;
-        }
-        try {
-          let imageUrl = editOrder.imageUrl;
-          if (image) {
-            const storageRef = firebase.ref(storage, `images/${Date.now()}_${image.name}`);
-            await firebase.uploadBytes(storageRef, image);
-            imageUrl = await firebase.getDownloadURL(storageRef);
-          }
-          const updatedOrder = { ...editOrder, imageUrl };
-          await firebase.updateDoc(firebase.doc(db, 'orders', editOrder.id), updatedOrder);
-          closeEditModal();
-          alert('Order updated successfully!');
-        } catch (error) {
-          console.error('Error updating order:', error.message, error.code);
-          setError(`Error updating order: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const addSet = async (e) => {
-        e.preventDefault();
-        if (!firebaseInitialized || !db || !newSet.trim()) {
-          setError('Cannot add set: Firebase not initialized or set name is empty.');
-          return;
-        }
-        try {
-          const docRef = await firebase.addDoc(firebase.collection(db, 'sets'), { name: newSet.trim() });
-          setNewSet('');
-        } catch (error) {
-          console.error('Error adding set:', error.message, error.code);
-          setError(`Error adding set: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const deleteSet = async (id, setName) => {
-        if (!firebaseInitialized || !db) {
-          setError('Firebase not initialized.');
-          return;
-        }
-        if (!window.confirm(`Are you sure you want to delete the set "${setName}"? All associated orders will be archived.`)) return;
-        try {
-          const ordersQuery = firebase.query(firebase.collection(db, 'orders'), firebase.where('items', 'array-contains-any', [{ set: setName }]));
-          const ordersSnapshot = await firebase.getDocs(ordersQuery);
-          const batch = firebase.writeBatch(db);
-          ordersSnapshot.forEach(doc => {
-            const orderData = doc.data();
-            batch.set(firebase.doc(db, 'archive', doc.id), { ...orderData, archivedAt: firebase.Timestamp.fromDate(new Date()) });
-            batch.delete(firebase.doc(db, 'orders', doc.id));
-          });
-          batch.delete(firebase.doc(db, 'sets', id));
-          await batch.commit();
-        } catch (error) {
-          console.error('Error deleting set:', error.message, error.code);
-          setError(`Error deleting set or archiving orders: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const restoreSet = async (setName) => {
-        if (!firebaseInitialized || !db) {
-          setError('Firebase not initialized.');
-          return;
-        }
-        try {
-          const batch = firebase.writeBatch(db);
-          const setDocRef = firebase.doc(firebase.collection(db, 'sets'));
-          batch.set(setDocRef, { name: setName });
-          const archivedQuery = firebase.query(firebase.collection(db, 'archive'), firebase.where('items', 'array-contains-any', [{ set: setName }]));
-          const archivedSnapshot = await firebase.getDocs(archivedQuery);
-          archivedSnapshot.forEach(doc => {
-            const orderData = doc.data();
-            batch.set(firebase.doc(db, 'orders', doc.id), { ...orderData });
-            batch.delete(firebase.doc(db, 'archive', doc.id));
-          });
-          await batch.commit();
-        } catch (error) {
-          console.error('Error restoring set:', error.message, error.code);
-          setError(`Error restoring set: ${error.message} (Code: ${error.code})`);
-        }
-      };
-      const printOrderForm = (order) => {
-        try {
-          const doc = new jsPDF();
-          doc.setFontSize(18);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Purchase Order', 105, 20, { align: 'center' });
-          doc.setFontSize(12);
-          doc.setFont('helvetica', 'normal');
-          doc.text('Set Hardware Management', 20, 30);
-          doc.text(`P.O. Number: ${order.orderNumber || order.id}`, 20, 40);
-          doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 50);
-          doc.setLineWidth(0.5);
-          doc.line(20, 55, 190, 55);
-          doc.setFontSize(14);
-          doc.text('Order Details', 20, 65);
-          doc.setFontSize(10);
-          doc.text(`Pickup From: ${order.pickupFrom || 'N/A'}`, 20, 75);
-          doc.text(`Delivery Method: ${order.deliveryMethod || 'N/A'}`, 20, 85);
-          doc.text(`Dates: ${order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`}`, 20, 95);
-          doc.text(`Status: ${order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received'}`, 20, 105);
-          if (order.received && order.receivedAt) {
-            doc.text(`Received At: ${order.receivedAt.toLocaleString()}`, 20, 115);
-          }
-          if (order.imageUrl) {
-            doc.text('Image URL:', 20, 125);
-            doc.text(order.imageUrl, 20, 135, { maxWidth: 170 });
-          }
-          const tableStartY = order.imageUrl ? 145 : 125;
-          const tableData = order.items.map(item => [
-            item.itemName || 'N/A',
-            item.set || 'N/A',
-            item.recipient || 'N/A'
-          ]);
-          doc.autoTable({
-            startY: tableStartY,
-            head: [['Item Name', 'Set', 'Recipient']],
-            body: tableData,
-            theme: 'grid',
-            styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak' },
-            headStyles: { fillColor: [0, 102, 204], textColor: [255, 255, 255] },
-            columnStyles: {
-              0: { cellWidth: 80 },
-              1: { cellWidth: 50 },
-              2: { cellWidth: 50 }
-            }
-          });
-          const finalY = doc.lastAutoTable.finalY + 20;
-          doc.setFontSize(10);
-          doc.setFont('helvetica', 'italic');
-          doc.text('Thank you for your business!', 105, finalY, { align: 'center' });
-          doc.text('Contact: support@sethardware.com', 105, finalY + 10, { align: 'center' });
-          doc.save(`PO_${order.orderNumber || order.id}.pdf`);
-        } catch (error) {
-          console.error('Error generating P.O.:', error.message);
-          setError(`Error generating P.O.: ${error.message}`);
-        }
-      };
-      const exportToPDF = (orders, title) => {
-        try {
-          const doc = new jsPDF();
-          doc.setFontSize(16);
-          doc.text(title, 20, 20);
-          doc.setFontSize(12);
-          doc.text(`Generated on ${new Date().toLocaleDateString()}`, 20, 30);
-          const groupedOrders = orders.reduce((acc, order) => {
-            const setNames = [...new Set(order.items.map(item => item.set || 'Unknown Set'))];
-            setNames.forEach(setName => {
-              if (!acc[setName]) acc[setName] = [];
-              acc[setName].push(order);
-            });
-            return acc;
-          }, {});
-          let y = 40;
-          Object.keys(groupedOrders).sort().forEach(setName => {
-            doc.setFontSize(14);
-            doc.text(`Set: ${setName}`, 20, y);
-            y += 10;
-            const tableData = groupedOrders[setName]
-              .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-              .map(order => {
-                const status = order.received ? `Received${order.pickedUpBy ? ' by ' + order.pickedUpBy : ''}` : 'Not Received';
-                const dates = order.deliveryMethod === 'pickup' ? (order.deliveryDate || '') : `${order.startDate || ''} to ${order.endDate || ''}`;
-                const itemNames = order.items.map(item => item.itemName).join('; ');
-                const recipients = [...new Set(order.items.map(item => item.recipient))].join('; ');
-                const receivedAt = order.receivedAt ? order.receivedAt.toLocaleString() : '';
-                return [
-                  itemNames,
-                  order.pickupFrom || '',
-                  order.orderNumber || '',
-                  order.deliveryMethod || '',
-                  dates,
-                  recipients,
-                  status,
-                  receivedAt,
-                  order.imageUrl || ''
-                ];
-              });
-            doc.autoTable({
-              startY: y,
-              head: [['Item Names', 'Pickup From', 'Order Number', 'Delivery', 'Dates', 'Recipients', 'Status', 'Received At', 'Image URL']],
-              body: tableData,
-              theme: 'grid',
-              styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-              columnStyles: {
-                0: { cellWidth: 25 },
-                1: { cellWidth: 20 },
-                2: { cellWidth: 20 },
-                3: { cellWidth: 15 },
-                4: { cellWidth: 25 },
-                5: { cellWidth: 20 },
-                6: { cellWidth: 20 },
-                7: { cellWidth: 20 },
-                8: { cellWidth: 25 }
-              }
-            });
-            y = doc.lastAutoTable.finalY + 10;
-            if (y > 270) {
-              doc.addPage();
-              y = 20;
-            }
-          });
-          doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
-        } catch (error) {
-          console.error('Error generating PDF:', error.message);
-          setError(`Error generating PDF: ${error.message}`);
-        }
-      };
-      const activeOrders = orders.filter(order => !order.received);
-      const completedOrders = orders.filter(order => order.received);
-      const filteredActiveOrders = recipientFilter
-        ? activeOrders.filter(order => order.items.some(item => item.recipient === recipientFilter))
-        : activeOrders;
-      const filteredCompletedOrders = recipientFilter
-        ? completedOrders.filter(order => order.items.some(item => item.recipient === recipientFilter))
-        : completedOrders;
-      const groupedCompletedOrders = filteredCompletedOrders.reduce((acc, order) => {
-        const setNames = [...new Set(order.items.map(item => item.set || 'Unknown Set'))];
-        setNames.forEach(setName => {
-          if (!acc[setName]) acc[setName] = [];
-          acc[setName].push(order);
-        });
-        return acc;
-      }, {});
-      const groupedArchivedOrders = archivedOrders.reduce((acc, order) => {
-        const setNames = [...new Set(order.items.map(item => item.set || 'Unknown Set'))];
-        setNames.forEach(setName => {
-          if (!acc[setName]) acc[setName] = [];
-          acc[setName].push(order);
-        });
-        return acc;
-      }, {});
-      if (!firebaseInitialized) {
-        return React.createElement('div', { className: 'container mx-auto p-4' },
-          React.createElement('h1', { className: 'text-3xl font-bold mb-6 text-center' }, 'Hardware Order Management'),
-          React.createElement('div', { className: 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4' }, 'Error: Firebase not initialized. Please check your Firebase configuration and ensure the project is active.')
+
+      const filteredOrders = orders.filter(order => 
+        (showArchived ? order.archived : !order.archived) &&
+        (order.setNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         order.items.some(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())))
+      );
+
+      if (loading) {
+        return (
+          <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+            <div className="text-gray-600 text-lg">Loading...</div>
+          </div>
         );
       }
-      return React.createElement(ErrorBoundary, null,
-        React.createElement('div', { className: 'container mx-auto p-4' },
-          React.createElement('h1', { className: 'text-3xl font-bold mb-6 text-center' }, 'Hardware Order Management'),
-          React.createElement('div', { className: 'flex border-b mb-6' },
-            React.createElement('button', {
-              className: `px-4 py-2 font-semibold ${activeTab === 'home' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
-              onClick: () => setActiveTab('home')
-            }, 'Home'),
-            React.createElement('button', {
-              className: `px-4 py-2 font-semibold ${activeTab === 'completed' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
-              onClick: () => setActiveTab('completed')
-            }, 'Completed Orders'),
-            React.createElement('button', {
-              className: `px-4 py-2 font-semibold ${activeTab === 'options' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
-              onClick: () => setActiveTab('options')
-            }, 'Options'),
-            React.createElement('button', {
-              className: `px-4 py-2 font-semibold ${activeTab === 'orders' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
-              onClick: () => setActiveTab('orders')
-            }, 'Orders'),
-            React.createElement('button', {
-              className: `px-4 py-2 font-semibold ${activeTab === 'archive' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`,
-              onClick: () => setActiveTab('archive')
-            }, 'Archive')
-          ),
-          error && React.createElement('div', { className: 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4' }, error),
-          showReceivedModal && React.createElement('div', { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50' },
-            React.createElement('div', { className: 'bg-white p-8 rounded-lg shadow-lg max-w-md w-full' },
-              React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Mark Order as Received'),
-              React.createElement('div', { className: 'space-y-4' },
-                React.createElement('p', null, 'Select the person who picked up the order:'),
-                React.createElement('select', {
-                  value: pickedUpBy,
-                  onChange: (e) => setPickedUpBy(e.target.value),
-                  className: 'w-full p-2 border rounded',
-                  required: true
-                },
-                  React.createElement('option', { value: '', disabled: true }, 'Select Pickup Person'),
-                  recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-                ),
-                React.createElement('div', { className: 'flex space-x-2' },
-                  React.createElement('button', {
-                    onClick: confirmReceived,
-                    className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
-                    disabled: !pickedUpBy
-                  }, 'Confirm'),
-                  React.createElement('button', {
-                    onClick: closeReceivedModal,
-                    className: 'w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors'
-                  }, 'Cancel')
-                )
-              )
-            )
-          ),
-          editOrder && React.createElement('div', { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50' },
-            React.createElement('div', { className: 'bg-white p-8 rounded-lg shadow-lg max-w-lg w-full' },
-              React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Edit Order'),
-              React.createElement('form', { onSubmit: handleEditSubmit, className: 'space-y-4' },
-                editOrder.items.map((item, index) => React.createElement('div', { key: index, className: 'border p-4 rounded' },
-                  React.createElement('div', { className: 'flex justify-between items-center mb-2' },
-                    React.createElement('h3', { className: 'text-lg font-semibold' }, `Item ${index + 1}`),
-                    editOrder.items.length > 1 && React.createElement('button', {
-                      type: 'button',
-                      onClick: () => removeEditItem(index),
-                      className: 'text-red-500 hover:text-red-700'
-                    }, 'Remove')
-                  ),
-                  React.createElement('input', {
-                    type: 'text',
-                    name: 'itemName',
-                    value: item.itemName,
-                    onChange: (e) => handleEditInputChange(e, index),
-                    placeholder: 'Item Name',
-                    className: 'w-full p-2 border rounded mb-2',
-                    required: true
-                  }),
-                  React.createElement('select', {
-                    name: 'set',
-                    value: item.set,
-                    onChange: (e) => handleEditInputChange(e, index),
-                    className: 'w-full p-2 border rounded mb-2',
-                    required: true
-                  },
-                    React.createElement('option', { value: '' }, 'Select Set'),
-                    sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
-                  ),
-                  React.createElement('select', {
-                    name: 'recipient',
-                    value: item.recipient,
-                    onChange: (e) => handleEditInputChange(e, index),
-                    className: 'w-full p-2 border rounded',
-                    required: true
-                  },
-                    React.createElement('option', { value: '' }, 'Select Recipient'),
-                    recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-                  )
-                )),
-                React.createElement('button', {
-                  type: 'button',
-                  onClick: addEditItem,
-                  className: 'w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors'
-                }, 'Add Item'),
-                React.createElement('div', { className: 'space-y-2' },
-                  React.createElement('label', { className: 'flex items-center' },
-                    React.createElement('input', {
-                      type: 'checkbox',
-                      checked: editOrder.applyToAll,
-                      onChange: (e) => setEditOrder(prev => ({ ...prev, applyToAll: e.target.checked })),
-                      className: 'mr-2'
-                    }),
-                    'Apply same set and recipient to all items'
-                  ),
-                  editOrder.applyToAll && React.createElement('div', { className: 'space-y-2' },
-                    React.createElement('select', {
-                      name: 'allSet',
-                      value: editOrder.allSet,
-                      onChange: handleEditInputChange,
-                      className: 'w-full p-2 border rounded'
-                    },
-                      React.createElement('option', { value: '' }, 'Select Set for All'),
-                      sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
-                    ),
-                    React.createElement('select', {
-                      name: 'allRecipient',
-                      value: editOrder.allRecipient,
-                      onChange: handleEditInputChange,
-                      className: 'w-full p-2 border rounded'
-                    },
-                      React.createElement('option', { value: '' }, 'Select Recipient for All'),
-                      recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-                    ),
-                    React.createElement('button', {
-                      type: 'button',
-                      onClick: applyToAllEditItems,
-                      className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors'
-                    }, 'Apply to All Items')
-                  )
-                ),
-                React.createElement('input', {
-                  type: 'text',
-                  name: 'pickupFrom',
-                  value: editOrder.pickupFrom,
-                  onChange: handleEditInputChange,
-                  placeholder: 'Pickup From',
-                  className: 'w-full p-2 border rounded',
-                  required: true
-                }),
-                React.createElement('input', {
-                  type: 'text',
-                  name: 'orderNumber',
-                  value: editOrder.orderNumber,
-                  onChange: handleEditInputChange,
-                  placeholder: 'Order Number',
-                  className: 'w-full p-2 border rounded',
-                  required: true
-                }),
-                React.createElement('select', {
-                  name: 'deliveryMethod',
-                  value: editOrder.deliveryMethod,
-                  onChange: handleEditInputChange,
-                  className: 'w-full p-2 border rounded'
-                },
-                  React.createElement('option', { value: 'shipped' }, 'Shipped'),
-                  React.createElement('option', { value: 'pickup' }, 'Pickup')
-                ),
-                editOrder.deliveryMethod === 'pickup' ?
-                  React.createElement('input', {
-                    type: 'date',
-                    name: 'deliveryDate',
-                    value: editOrder.deliveryDate,
-                    onChange: handleEditInputChange,
-                    placeholder: 'Delivery Date',
-                    className: 'w-full p-2 border rounded',
-                    required: true
-                  }) :
-                  React.createElement('div', { className: 'flex space-x-2' },
-                    React.createElement('input', {
-                      type: 'date',
-                      name: 'startDate',
-                      value: editOrder.startDate,
-                      onChange: handleEditInputChange,
-                      placeholder: 'Shipping Start Date',
-                      className: 'w-full p-2 border rounded',
-                      required: true
-                    }),
-                    React.createElement('input', {
-                      type: 'date',
-                      name: 'endDate',
-                      value: editOrder.endDate,
-                      onChange: handleEditInputChange,
-                      placeholder: 'Shipping End Date',
-                      className: 'w-full p-2 border rounded',
-                      required: true
-                    })
-                  ),
-                React.createElement('input', {
-                  type: 'file',
-                  onChange: handleImageChange,
-                  accept: 'image/*',
-                  className: 'w-full p-2 border rounded'
-                }),
-                React.createElement('div', { className: 'flex space-x-2' },
-                  React.createElement('button', {
-                    type: 'submit',
-                    className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors'
-                  }, 'Save Changes'),
-                  React.createElement('button', {
-                    onClick: closeEditModal,
-                    className: 'w-full bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors'
-                  }, 'Cancel')
-                )
-              )
-            )
-          ),
-          activeTab === 'home' && React.createElement('div', null,
-            React.createElement('div', { className: 'flex justify-between items-center mb-4' },
-              React.createElement('select', {
-                value: recipientFilter,
-                onChange: (e) => setRecipientFilter(e.target.value),
-                className: 'p-2 border rounded'
-              },
-                React.createElement('option', { value: '' }, 'All Recipients'),
-                recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-              ),
-              React.createElement('div', { className: 'flex space-x-2' },
-                React.createElement('button', {
-                  onClick: () => exportToPDF(filteredActiveOrders, 'Active Orders'),
-                  className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
-                  disabled: !firebaseInitialized
-                }, 'Export Active Orders to PDF')
-              )
-            ),
-            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Active Orders'),
-            filteredActiveOrders.length === 0 ?
-              React.createElement('p', { className: 'text-gray-600' }, 'No active orders found.') :
-              React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' },
-                filteredActiveOrders.map(order => React.createElement('div', { key: order.id, className: 'bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300' },
-                  React.createElement('h3', { className: 'text-xl font-semibold mb-2' }, order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'),
-                  React.createElement('p', null, React.createElement('strong', null, 'Sets:'), ' ', order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'),
-                  React.createElement('p', null, React.createElement('strong', null, 'Recipients:'), ' ', order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'),
-                  React.createElement('p', null, React.createElement('strong', null, 'Pickup From:'), ' ', order.pickupFrom || 'N/A'),
-                  React.createElement('p', null, React.createElement('strong', null, 'Order Number:'), ' ', order.orderNumber || 'N/A'),
-                  React.createElement('p', null, React.createElement('strong', null, 'Delivery:'), ' ', order.deliveryMethod || 'N/A'),
-                  React.createElement('p', null, React.createElement('strong', null, 'Dates:'), ' ', order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`),
-                  React.createElement('p', null, React.createElement('strong', null, 'Received:'), ' ', order.received ? 'Yes' : 'No'),
-                  order.received && order.pickedUpBy && React.createElement('p', null, React.createElement('strong', null, 'Picked Up By:'), ' ', order.pickedUpBy),
-                  order.received && order.receivedAt && React.createElement('p', null, React.createElement('strong', null, 'Received At:'), ' ', order.receivedAt.toLocaleString()),
-                  order.imageUrl && React.createElement('img', { src: order.imageUrl, alt: 'Order item', className: 'w-full h-32 object-cover rounded mt-2' }),
-                  React.createElement('div', { className: 'mt-4 grid grid-cols-2 gap-2' },
-                    React.createElement('button', {
-                      onClick: () => openReceivedModal(order.id),
-                      className: 'bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors'
-                    }, 'Received'),
-                    React.createElement('button', {
-                      onClick: () => openEditModal(order),
-                      className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors'
-                    }, 'Edit'),
-                    React.createElement('button', {
-                      onClick: () => deleteOrder(order.id),
-                      className: 'bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors'
-                    }, 'Delete'),
-                    React.createElement('button', {
-                      onClick: () => printOrderForm(order),
-                      className: 'bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2'
-                    }, 'Print P.O.')
-                  )
-                ))
-              )
-            ),
-          activeTab === 'orders' && React.createElement('div', { className: 'max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300' },
-            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'New Order'),
-            React.createElement('form', { onSubmit: handleSubmit, className: 'space-y-4' },
-              formData.items.map((item, index) => React.createElement('div', { key: index, className: 'border p-4 rounded' },
-                React.createElement('div', { className: 'flex justify-between items-center mb-2' },
-                  React.createElement('h3', { className: 'text-lg font-semibold' }, `Item ${index + 1}`),
-                  formData.items.length > 1 && React.createElement('button', {
-                    type: 'button',
-                    onClick: () => removeItem(index),
-                    className: 'text-red-500 hover:text-red-700'
-                  }, 'Remove')
-                ),
-                React.createElement('input', {
-                  type: 'text',
-                  name: 'itemName',
-                  value: item.itemName,
-                  onChange: (e) => handleInputChange(e, index),
-                  placeholder: 'Item Name',
-                  className: 'w-full p-2 border rounded mb-2',
-                  required: true
-                }),
-                React.createElement('select', {
-                  name: 'set',
-                  value: item.set,
-                  onChange: (e) => handleInputChange(e, index),
-                  className: 'w-full p-2 border rounded mb-2',
-                  required: true
-                },
-                  React.createElement('option', { value: '' }, 'Select Set'),
-                  sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
-                ),
-                React.createElement('select', {
-                  name: 'recipient',
-                  value: item.recipient,
-                  onChange: (e) => handleInputChange(e, index),
-                  className: 'w-full p-2 border rounded',
-                  required: true
-                },
-                  React.createElement('option', { value: '' }, 'Select Recipient'),
-                  recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-                )
-              )),
-              React.createElement('button', {
-                type: 'button',
-                onClick: addItem,
-                className: 'w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors'
-              }, 'Add Item'),
-              React.createElement('div', { className: 'space-y-2' },
-                React.createElement('label', { className: 'flex items-center' },
-                  React.createElement('input', {
-                    type: 'checkbox',
-                    checked: formData.applyToAll,
-                    onChange: (e) => setFormData(prev => ({ ...prev, applyToAll: e.target.checked })),
-                    className: 'mr-2'
-                  }),
-                  'Apply same set and recipient to all items'
-                ),
-                formData.applyToAll && React.createElement('div', { className: 'space-y-2' },
-                  React.createElement('select', {
-                    name: 'allSet',
-                    value: formData.allSet,
-                    onChange: handleInputChange,
-                    className: 'w-full p-2 border rounded'
-                  },
-                    React.createElement('option', { value: '' }, 'Select Set for All'),
-                    sets.map(set => React.createElement('option', { key: set.id, value: set.name }, set.name))
-                  ),
-                  React.createElement('select', {
-                    name: 'allRecipient',
-                    value: formData.allRecipient,
-                    onChange: handleInputChange,
-                    className: 'w-full p-2 border rounded'
-                  },
-                    React.createElement('option', { value: '' }, 'Select Recipient for All'),
-                    recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-                  ),
-                  React.createElement('button', {
-                    type: 'button',
-                    onClick: applyToAllItems,
-                    className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors'
-                  }, 'Apply to All Items')
-                )
-              ),
-              React.createElement('input', {
-                type: 'text',
-                name: 'pickupFrom',
-                value: formData.pickupFrom,
-                onChange: handleInputChange,
-                placeholder: 'Pickup From',
-                className: 'w-full p-2 border rounded',
-                required: true
-              }),
-              React.createElement('input', {
-                type: 'text',
-                name: 'orderNumber',
-                value: formData.orderNumber,
-                onChange: handleInputChange,
-                placeholder: 'Order Number',
-                className: 'w-full p-2 border rounded',
-                required: true
-              }),
-              React.createElement('select', {
-                name: 'deliveryMethod',
-                value: formData.deliveryMethod,
-                onChange: handleInputChange,
-                className: 'w-full p-2 border rounded'
-              },
-                React.createElement('option', { value: 'shipped' }, 'Shipped'),
-                React.createElement('option', { value: 'pickup' }, 'Pickup')
-              ),
-              formData.deliveryMethod === 'pickup' ?
-                React.createElement('input', {
-                  type: 'date',
-                  name: 'deliveryDate',
-                  value: formData.deliveryDate,
-                  onChange: handleInputChange,
-                  placeholder: 'Delivery Date',
-                  className: 'w-full p-2 border rounded',
-                  required: true
-                }) :
-                React.createElement('div', { className: 'flex space-x-2' },
-                  React.createElement('input', {
-                    type: 'date',
-                    name: 'startDate',
-                    value: formData.startDate,
-                    onChange: handleInputChange,
-                    placeholder: 'Shipping Start Date',
-                    className: 'w-full p-2 border rounded',
-                    required: true
-                  }),
-                  React.createElement('input', {
-                    type: 'date',
-                    name: 'endDate',
-                    value: formData.endDate,
-                    onChange: handleInputChange,
-                    placeholder: 'Shipping End Date',
-                    className: 'w-full p-2 border rounded',
-                    required: true
-                  })
-                ),
-              React.createElement('input', {
-                type: 'file',
-                onChange: handleImageChange,
-                accept: 'image/*',
-                className: 'w-full p-2 border rounded'
-              }),
-              React.createElement('button', {
-                type: 'submit',
-                disabled: uploading || !firebaseInitialized,
-                className: 'w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300'
-              }, uploading ? 'Submitting...' : 'Submit Order')
-            )
-          ),
-          activeTab === 'options' && React.createElement('div', { className: 'max-w-lg mx-auto bg-white p-6 rounded-lg shadow-md border-2 border-gray-300' },
-            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Options'),
-            React.createElement('div', { className: 'space-y-6' },
-              React.createElement('div', null,
-                React.createElement('h3', { className: 'text-lg font-semibold mb-2' }, 'Manage Sets'),
-                React.createElement('form', { onSubmit: addSet, className: 'flex space-x-2 mb-4' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: newSet,
-                    onChange: (e) => setNewSet(e.target.value),
-                    placeholder: 'Add New Set',
-                    className: 'w-full p-2 border rounded'
-                  }),
-                  React.createElement('button', {
-                    type: 'submit',
-                    disabled: !firebaseInitialized,
-                    className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300'
-                  }, 'Add')
-                ),
-                React.createElement('ul', { className: 'space-y-2' },
-                  sets.length === 0 ?
-                    React.createElement('li', { className: 'text-gray-600' }, 'No sets available.') :
-                    sets.map(set => React.createElement('li', { key: set.id, className: 'flex justify-between items-center' },
-                      React.createElement('span', null, set.name || 'Unnamed Set'),
-                      React.createElement('button', {
-                        onClick: () => deleteSet(set.id, set.name),
-                        className: 'text-red-500 hover:text-red-700',
-                        disabled: !firebaseInitialized
-                      }, 'Delete')
-                    ))
-                )
-              ),
-              React.createElement('div', null,
-                React.createElement('h3', { className: 'text-lg font-semibold mb-2' }, 'Manage Recipients'),
-                React.createElement('form', { onSubmit: addRecipient, className: 'flex space-x-2 mb-4' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: newRecipient,
-                    onChange: (e) => setNewRecipient(e.target.value),
-                    placeholder: 'Add New Recipient',
-                    className: 'w-full p-2 border rounded'
-                  }),
-                  React.createElement('button', {
-                    type: 'submit',
-                    disabled: !firebaseInitialized,
-                    className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors disabled:bg-blue-300'
-                  }, 'Add')
-                ),
-                React.createElement('ul', { className: 'space-y-2' },
-                  recipients.length === 0 ?
-                    React.createElement('li', { className: 'text-gray-600' }, 'No recipients available.') :
-                    recipients.map(recipient => React.createElement('li', { key: recipient.id, className: 'flex justify-between items-center' },
-                      React.createElement('span', null, recipient.name || 'Unnamed Recipient'),
-                      React.createElement('button', {
-                        onClick: () => deleteRecipient(recipient.id),
-                        className: 'text-red-500 hover:text-red-700',
-                        disabled: !firebaseInitialized
-                      }, 'Delete')
-                    ))
-                )
-              )
-            )
-          ),
-          activeTab === 'completed' && React.createElement('div', { className: 'max-w-4xl mx-auto' },
-            React.createElement('div', { className: 'flex justify-between items-center mb-4' },
-              React.createElement('select', {
-                value: recipientFilter,
-                onChange: (e) => setRecipientFilter(e.target.value),
-                className: 'p-2 border rounded'
-              },
-                React.createElement('option', { value: '' }, 'All Recipients'),
-                recipients.map(recipient => React.createElement('option', { key: recipient.id, value: recipient.name }, recipient.name))
-              ),
-              React.createElement('div', { className: 'flex space-x-2' },
-                React.createElement('button', {
-                  onClick: () => exportToPDF(filteredCompletedOrders, 'Completed Orders'),
-                  className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
-                  disabled: !firebaseInitialized
-                }, 'Export Completed Orders to PDF')
-              )
-            ),
-            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Completed Orders'),
-            Object.keys(groupedCompletedOrders).length === 0 ?
-              React.createElement('p', { className: 'text-gray-600' }, 'No completed orders found.') :
-              Object.keys(groupedCompletedOrders).sort().map(setName => React.createElement('div', { key: setName, className: 'mb-8' },
-                React.createElement('h3', { className: 'text-xl font-semibold mb-4' }, setName),
-                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' },
-                  groupedCompletedOrders[setName]
-                    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-                    .map(order => React.createElement('div', { key: order.id, className: 'bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300' },
-                      React.createElement('h4', { className: 'text-lg font-semibold mb-2' }, order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'),
-                      React.createElement('p', null, React.createElement('strong', null, 'Sets:'), ' ', order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'),
-                      React.createElement('p', null, React.createElement('strong', null, 'Recipients:'), ' ', order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'),
-                      React.createElement('p', null, React.createElement('strong', null, 'Pickup From:'), ' ', order.pickupFrom || 'N/A'),
-                      React.createElement('p', null, React.createElement('strong', null, 'Order Number:'), ' ', order.orderNumber || 'N/A'),
-                      React.createElement('p', null, React.createElement('strong', null, 'Delivery:'), ' ', order.deliveryMethod || 'N/A'),
-                      React.createElement('p', null, React.createElement('strong', null, 'Dates:'), ' ', order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`),
-                      React.createElement('p', null, React.createElement('strong', null, 'Received:'), ' Yes'),
-                      order.pickedUpBy && React.createElement('p', null, React.createElement('strong', null, 'Picked Up By:'), ' ', order.pickedUpBy),
-                      order.receivedAt && React.createElement('p', null, React.createElement('strong', null, 'Received At:'), ' ', order.receivedAt.toLocaleString()),
-                      order.imageUrl && React.createElement('img', { src: order.imageUrl, alt: 'Order item', className: 'w-full h-32 object-cover rounded mt-2' }),
-                      React.createElement('div', { className: 'mt-4 grid grid-cols-2 gap-2' },
-                        React.createElement('button', {
-                          onClick: () => toggleReceived(order.id, order.received),
-                          className: 'bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors'
-                        }, 'Undo Received'),
-                        React.createElement('button', {
-                          onClick: () => openEditModal(order),
-                          className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors'
-                        }, 'Edit'),
-                        React.createElement('button', {
-                          onClick: () => deleteOrder(order.id),
-                          className: 'bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition-colors'
-                        }, 'Delete'),
-                        React.createElement('button', {
-                          onClick: () => printOrderForm(order),
-                          className: 'bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2'
-                        }, 'Print P.O.')
-                      )
-                    ))
-                )
-              ))
-            ),
-          activeTab === 'archive' && React.createElement('div', { className: 'max-w-4xl mx-auto' },
-            React.createElement('div', { className: 'flex justify-end space-x-2 mb-4' },
-              React.createElement('button', {
-                onClick: () => exportToPDF(archivedOrders, 'Archived Orders'),
-                className: 'bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors',
-                disabled: !firebaseInitialized
-              }, 'Export Archived Orders to PDF')
-            ),
-            React.createElement('h2', { className: 'text-2xl font-semibold mb-4' }, 'Archived Orders'),
-            Object.keys(groupedArchivedOrders).length === 0 ?
-              React.createElement('p', { className: 'text-gray-600' }, 'No archived orders found.') :
-              Object.keys(groupedArchivedOrders).sort().map(setName => React.createElement('div', { key: setName, className: 'mb-8' },
-                React.createElement('div', { className: 'flex justify-between items-center mb-4' },
-                  React.createElement('h3', { className: 'text-xl font-semibold' }, setName),
-                  React.createElement('button', {
-                    onClick: () => restoreSet(setName),
-                    className: 'bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors',
-                    disabled: !firebaseInitialized
-                  }, 'Restore Set')
-                ),
-                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' },
-                  groupedArchivedOrders[setName].map(order => React.createElement('div', { key: order.id, className: 'bg-white p-6 rounded-lg shadow-lg border-2 border-gray-300' },
-                    React.createElement('h4', { className: 'text-lg font-semibold mb-2' }, order.items ? order.items.map(item => item.itemName).join(', ') : 'N/A'),
-                    React.createElement('p', null, React.createElement('strong', null, 'Sets:'), ' ', order.items ? [...new Set(order.items.map(item => item.set))].join(', ') : 'N/A'),
-                    React.createElement('p', null, React.createElement('strong', null, 'Recipients:'), ' ', order.items ? [...new Set(order.items.map(item => item.recipient))].join(', ') : 'N/A'),
-                    React.createElement('p', null, React.createElement('strong', null, 'Pickup From:'), ' ', order.pickupFrom || 'N/A'),
-                    React.createElement('p', null, React.createElement('strong', null, 'Order Number:'), ' ', order.orderNumber || 'N/A'),
-                    React.createElement('p', null, React.createElement('strong', null, 'Delivery:'), ' ', order.deliveryMethod || 'N/A'),
-                    React.createElement('p', null, React.createElement('strong', null, 'Dates:'), ' ', order.deliveryMethod === 'pickup' ? (order.deliveryDate || 'N/A') : `${order.startDate || 'N/A'} to ${order.endDate || 'N/A'}`),
-                    React.createElement('p', null, React.createElement('strong', null, 'Received:'), ' ', order.received ? 'Yes' : 'No'),
-                    order.received && order.pickedUpBy && React.createElement('p', null, React.createElement('strong', null, 'Picked Up By:'), ' ', order.pickedUpBy),
-                    order.received && order.receivedAt && React.createElement('p', null, React.createElement('strong', null, 'Received At:'), ' ', order.receivedAt.toLocaleString()),
-                    order.imageUrl && React.createElement('img', { src: order.imageUrl, alt: 'Order item', className: 'w-full h-32 object-cover rounded mt-2' }),
-                    React.createElement('div', { className: 'mt-4 grid grid-cols-2 gap-2' },
-                      React.createElement('button', {
-                        onClick: () => printOrderForm(order),
-                        className: 'bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition-colors col-span-2'
-                      }, 'Print P.O.')
-                    )
-                  ))
-                )
-              ))
-            )
-        )
+
+      return (
+        <ErrorBoundary>
+          <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4 font-sans">
+            <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl p-6">
+              <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Set Hardware Tracker</h1>
+              {error && (
+                <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg flex justify-between items-center">
+                  <span>{error}</span>
+                  <button onClick={() => setError(null)} className="text-red-700 font-bold">✕</button>
+                </div>
+              )}
+
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-700 mb-2">New Order</h2>
+                <div className="relative mb-2">
+                  <input
+                    type="text"
+                    placeholder="Set Number"
+                    value={newOrder.setNumber}
+                    onChange={(e) => setNewOrder({ ...newOrder, setNumber: e.target.value })}
+                    list="setNumbers"
+                    className="w-full p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <datalist id="setNumbers">
+                    {setNumbers.map((setNum, index) => (
+                      <option key={index} value={setNum} />
+                    ))}
+                  </datalist>
+                </div>
+                {newOrder.items.map((item, index) => (
+                  <div key={index} className="flex gap-2 mb-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Item Name"
+                      value={item.name}
+                      onChange={(e) => updateItem(index, 'name', e.target.value)}
+                      className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="For (Person/Role)"
+                        value={item.for}
+                        onChange={(e) => updateItem(index, 'for', e.target.value)}
+                        list={`recipients-${index}`}
+                        className="w-full p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <datalist id={`recipients-${index}`}>
+                        {recipients.map((recipient, i) => (
+                          <option key={i} value={recipient} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <input
+                      type="date"
+                      value={item.deliveryDate}
+                      onChange={(e) => updateItem(index, 'deliveryDate', e.target.value)}
+                      className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {newOrder.items.length > 1 && (
+                      <button
+                        onClick={() => removeItem(index)}
+                        className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button
+                    onClick={addItemToOrder}
+                    className="mt-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                  >
+                    Add Item
+                  </button>
+                  <button
+                    onClick={addOrder}
+                    className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  >
+                    Submit Order
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-6 flex gap-4 items-center">
+                <input
+                  type="text"
+                  placeholder="Search by Set Number or Item Name"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={() => setShowArchived(!showArchived)}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                >
+                  {showArchived ? 'Active Orders' : 'Archived Orders'}
+                </button>
+                <button
+                  onClick={generateBatchPDF}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                >
+                  Batch PDF
+                </button>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-semibold text-gray-700 mb-2">{showArchived ? 'Archived Orders' : 'Active Orders'}</h2>
+                {filteredOrders.sort((a, b) => a.setNumber.localeCompare(b.setNumber)).map(order => (
+                  <div key={order.id} className="mb-4 p-4 bg-gray-50 rounded-lg shadow transition-all hover:shadow-md">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-lg font-semibold text-gray-800">Set {order.setNumber}</h3>
+                      <button
+                        onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                        className="px-2 py-1 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                      >
+                        {expandedOrder === order.id ? 'Collapse' : 'Expand'}
+                      </button>
+                    </div>
+                    {expandedOrder === order.id && (
+                      <div className="mt-2">
+                        {order.items.map((item, index) => (
+                          <p key={index} className="text-gray-600">
+                            {item.name} for {item.for} (Expected: {item.deliveryDate})
+                          </p>
+                        ))}
+                        {order.pickupPerson ? (
+                          <p className="text-gray-600 mt-2">Picked up by {order.pickupPerson} at {new Date(order.pickupTime).toLocaleString()}</p>
+                        ) : (
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Pickup Person"
+                              onBlur={(e) => markPickedUp(order.id, e.target.value)}
+                              className="p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        )}
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            onClick={() => generatePDF(order)}
+                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                          >
+                            Generate PDF
+                          </button>
+                          <button
+                            onClick={() => toggleArchive(order.id, !order.archived)}
+                            className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+                          >
+                            {order.archived ? 'Unarchive' : 'Archive'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {filteredOrders.length === 0 && (
+                  <p className="text-gray-500 text-center">No orders found.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </ErrorBoundary>
       );
     }
+
     try {
-      ReactDOM.render(React.createElement(ErrorBoundary, null, React.createElement(App)), document.getElementById('root'));
-    } catch (error) {
-      console.error('React render error:', error.message);
-      document.getElementById('root').innerHTML = `<div class="text-red-500 text-center p-4">Error loading application: ${error.message}</div>`;
+      ReactDOM.render(<App />, document.getElementById('root'));
+    } catch (err) {
+      console.error('Failed to render React app:', err);
+      document.getElementById('root').innerHTML = '<div class="text-red-700 p-4 text-center">Error loading application. Please refresh the page.</div>';
     }
   </script>
 </body>

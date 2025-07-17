@@ -146,6 +146,10 @@
         .archive-button {
             background-color: #ff9500;
         }
+        .undo-button {
+            background-color: #ff9500;
+            margin-top: 10px;
+        }
         .error {
             color: #ff3b30;
             text-align: center;
@@ -364,6 +368,15 @@
                 setExpandedOrders(prev => ({ ...prev, [id]: !prev[id] }));
             };
 
+            const archiveOrdersWithSet = async (setName) => {
+                const ordersToArchive = orders.filter(order => 
+                    order.items.some(item => item.set === setName)
+                );
+                for (const order of ordersToArchive) {
+                    await updateStatus(order.id, 'archived');
+                }
+            };
+
             const addSet = async () => {
                 if (newSetName.trim()) {
                     try {
@@ -378,9 +391,10 @@
                 }
             };
 
-            const deleteSet = async (id) => {
+            const deleteSet = async (id, setName) => {
                 try {
                     await db.collection('sets').doc(id).delete();
+                    await archiveOrdersWithSet(setName);
                 } catch (err) {
                     setError('Failed to delete set: ' + err.message);
                 }
@@ -559,7 +573,7 @@
                                 {sets.map(s => (
                                     <li key={s.id}>
                                         {s.name}
-                                        <button className="delete-button" onClick={() => deleteSet(s.id)}>Delete</button>
+                                        <button className="delete-button" onClick={() => deleteSet(s.id, s.name)}>Delete</button>
                                     </li>
                                 ))}
                             </ul>
@@ -626,7 +640,13 @@
                                             )}
                                         </>
                                     )}
-                                    {tab === 'Received' && <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>}
+                                    {tab === 'Received' && (
+                                        <>
+                                            <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>
+                                            <button className="undo-button" onClick={() => updateStatus(order.id, 'ordered')}>Undo</button>
+                                        </>
+                                    )}
+                                    {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
                                 </li>
                             ))}
                         </ul>

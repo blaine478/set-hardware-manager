@@ -136,7 +136,7 @@
             padding: 6px 12px;
             margin-left: 10px;
         }
-        .status-button, .archive-button, .undo-button, .delete-button-order {
+        .status-button, .archive-button, .undo-button, .delete-button-order, .print-pdf-button {
             margin-top: 10px;
             margin-right: 5px;
         }
@@ -151,6 +151,9 @@
         }
         .delete-button-order {
             background-color: #ff3b30;
+        }
+        .print-pdf-button {
+            background-color: #5ac8fa;
         }
         .error {
             color: #ff3b30;
@@ -230,10 +233,9 @@
             margin-top: 20px;
             width: auto;
         }
-        .print-pdf-button {
-            background-color: #5ac8fa;
-            margin-top: 10px;
-            margin-right: 5px;
+        .item-image {
+            max-width: 100px;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -264,7 +266,7 @@
             const [receivers, setReceivers] = useState([]);
             const [newSetName, setNewSetName] = useState('');
             const [newReceiverName, setNewReceiverName] = useState('');
-            const [items, setItems] = useState([{ item: '', set: '', imageUrl: '' }]);
+            const [items, setItems] = useState([{ item: '', set: '', imageUrl: '', quantity: 1, unitPrice: 0 }]);
             const [description, setDescription] = useState('');
             const [orderNumber, setOrderNumber] = useState('');
             const [orderType, setOrderType] = useState('pickup');
@@ -349,7 +351,7 @@
             }, [user]);
 
             const addItemRow = () => {
-                setItems([...items, { item: '', set: '', imageUrl: '' }]);
+                setItems([...items, { item: '', set: '', imageUrl: '', quantity: 1, unitPrice: 0 }]);
             };
 
             const removeItemRow = (index) => {
@@ -365,124 +367,99 @@
 
             const generatePDF = (orderData) => {
                 const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                doc.setFontSize(18);
-                doc.text('Hardware Tracker', 105, 20, { align: 'center' });
-                doc.setFontSize(12);
-                doc.text('Street Address', 105, 30, { align: 'center' });
-                doc.text('City, ST ZIP', 105, 35, { align: 'center' });
-                doc.text('Phone: (000) 000-0000', 105, 40, { align: 'center' });
-                doc.text('Fax: (000) 000-0000', 105, 45, { align: 'center' });
-                doc.text('www.hardwaretracker.com', 105, 50, { align: 'center' });
-
-                doc.setFontSize(16);
-                doc.text('WORK ORDER', 150, 20);
-
-                doc.setFillColor(0, 122, 255);
-                doc.rect(150, 25, 50, 5, 'F');
-                doc.setTextColor(255, 255, 255);
-                doc.text('WORK ORDER #', 152, 29);
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                
+                // Header
+                doc.setFontSize(20);
                 doc.setTextColor(0, 0, 0);
-                doc.text(orderData.orderNumber, 180, 29);
+                doc.text('Purchase Order', 105, 20, { align: 'center' });
+                doc.setFontSize(10);
+                doc.text('Hardware Tracker Inc.', 105, 30, { align: 'center' });
+                doc.text('123 Business St, City, ST 12345', 105, 35, { align: 'center' });
+                doc.text('Phone: (555) 123-4567 | Email: info@hardwaretracker.com', 105, 40, { align: 'center' });
 
-                doc.setFillColor(0, 122, 255);
-                doc.rect(150, 35, 50, 5, 'F');
+                // PO Info
+                doc.setFillColor(0, 102, 204);
+                doc.rect(10, 50, 190, 10, 'F');
                 doc.setTextColor(255, 255, 255);
-                doc.text('DATE', 152, 39);
+                doc.text('PO Number: ' + orderData.orderNumber, 15, 56);
+                doc.text('Date: ' + new Date().toLocaleDateString(), 70, 56);
+                doc.text('Supplier: ' + orderData.store, 125, 56);
                 doc.setTextColor(0, 0, 0);
-                doc.text(new Date().toLocaleDateString(), 170, 39);
 
+                // Buyer Info
                 doc.setFillColor(200, 200, 200);
-                doc.rect(10, 55, 190, 5, 'F');
-                doc.text('REQUESTED BY', 10, 59);
-                doc.text('CUSTOMER ID', 80, 59);
-                doc.text('DEPARTMENT', 140, 59);
+                doc.rect(10, 65, 90, 20, 'F');
+                doc.text('Bill To:', 15, 70);
+                doc.text(orderData.recipient, 15, 75);
+                doc.text('Company Name', 15, 80);
+                doc.text('123 Buyer St, City, ST 12345', 15, 85);
+                doc.text('(555) 987-6543', 15, 90);
 
-                doc.text('Customer Name', 10, 69);
-                doc.text('A-0000', 80, 69);
-                doc.text('Name', 140, 69);
+                // Ship To
+                doc.rect(105, 65, 90, 20, 'F');
+                doc.text('Ship To:', 110, 70);
+                doc.text(orderData.recipient, 110, 75);
+                doc.text('Company Name', 110, 80);
+                doc.text('123 Ship St, City, ST 12345', 110, 85);
+                doc.text('(555) 987-6543', 110, 90);
 
-                doc.setFillColor(0, 122, 255);
-                doc.rect(10, 75, 95, 5, 'F');
+                // Table Header
+                doc.setFillColor(0, 102, 204);
+                doc.rect(10, 90, 190, 10, 'F');
                 doc.setTextColor(255, 255, 255);
-                doc.text('BILL TO', 12, 79);
-                doc.setFillColor(0, 122, 255);
-                doc.rect(105, 75, 95, 5, 'F');
-                doc.text('JOB DETAILS', 107, 79);
+                doc.text('Item', 15, 96);
+                doc.text('Description', 50, 96);
+                doc.text('Quantity', 120, 96);
+                doc.text('Unit Price', 150, 96);
+                doc.text('Total', 170, 96);
                 doc.setTextColor(0, 0, 0);
 
-                doc.text(orderData.recipient, 10, 85);
-                doc.text('Company Name', 10, 90);
-                doc.text('Street Address', 10, 95);
-                doc.text('City, ST ZIP', 10, 100);
-                doc.text('(000) 000-0000', 10, 105);
-
-                doc.text('[Enter general description of work]', 105, 85);
-
-                doc.setFillColor(0, 122, 255);
-                doc.rect(10, 110, 20, 5, 'F');
-                doc.setTextColor(255, 255, 255);
-                doc.text('QTY', 12, 114);
-                doc.rect(30, 110, 80, 5, 'F');
-                doc.text('DESCRIPTION', 32, 114);
-                doc.rect(110, 110, 20, 5, 'F');
-                doc.text('TAXED', 112, 114);
-                doc.rect(130, 110, 35, 5, 'F');
-                doc.text('UNIT PRICE', 132, 114);
-                doc.rect(165, 110, 35, 5, 'F');
-                doc.text('TOTAL', 167, 114);
-                doc.setTextColor(0, 0, 0);
-
-                orderData.items.forEach((it, idx) => {
-                    const y = 120 + (idx * 10);
-                    doc.text('1', 12, y);
-                    doc.text(it.item + ' (Set: ' + it.set + ')', 32, y);
-                    doc.text('', 112, y); // No tax
-                    doc.text('', 132, y); // No price
-                    doc.text('', 167, y); // No total
+                // Items
+                let y = 100;
+                let totalAmount = 0;
+                orderData.items.forEach((it) => {
+                    const itemTotal = it.quantity * it.unitPrice;
+                    totalAmount += itemTotal;
+                    doc.text(it.item || 'N/A', 15, y);
+                    doc.text(it.set || 'N/A', 50, y);
+                    doc.text(it.quantity.toString(), 120, y);
+                    doc.text(`$${it.unitPrice.toFixed(2)}`, 150, y);
+                    doc.text(`$${itemTotal.toFixed(2)}`, 170, y);
+                    y += 10;
                 });
 
-                const subtotalY = 120 + (orderData.items.length * 10);
-                doc.text('SUBTOTAL', 132, subtotalY);
-                doc.text('', 167, subtotalY); // No subtotal
+                // Totals
+                doc.setFillColor(200, 200, 200);
+                doc.rect(130, y, 70, 10, 'F');
+                doc.text('Subtotal:', 135, y + 6);
+                doc.text(`$${totalAmount.toFixed(2)}`, 180, y + 6);
 
-                doc.text('TAXABLE', 132, subtotalY + 10);
-                doc.text('', 167, subtotalY + 10);
+                y += 10;
+                doc.text('Tax (0%):', 135, y + 6);
+                doc.text('$0.00', 180, y + 6);
 
-                doc.text('TAX RATE', 132, subtotalY + 20);
-                doc.text('', 167, subtotalY + 20);
+                y += 10;
+                doc.text('Shipping:', 135, y + 6);
+                doc.text('$0.00', 180, y + 6);
 
-                doc.text('TAX', 132, subtotalY + 30);
-                doc.text('', 167, subtotalY + 30);
-
-                doc.text('S & H', 132, subtotalY + 40);
-                doc.text('', 167, subtotalY + 40);
-
-                doc.setFillColor(0, 122, 255);
-                doc.rect(132, subtotalY + 50, 35, 5, 'F');
+                y += 10;
+                doc.setFillColor(0, 102, 204);
+                doc.rect(130, y, 70, 10, 'F');
                 doc.setTextColor(255, 255, 255);
-                doc.text('TOTAL', 134, subtotalY + 54);
+                doc.text('Total:', 135, y + 6);
+                doc.text(`$${totalAmount.toFixed(2)}`, 180, y + 6);
                 doc.setTextColor(0, 0, 0);
-                doc.text('', 167, subtotalY + 54); // No total
 
-                doc.text('OTHER COMMENTS', 10, subtotalY + 60);
-                doc.text('1. Total payment due 30 days after completion of work', 10, subtotalY + 70);
-                doc.text('2. Please refer to the W.O. # in all your correspondence', 10, subtotalY + 75);
-                doc.text('3. Please send correspondence regarding this work order to:', 10, subtotalY + 80);
-                doc.text('[Name, Phone #, Email]', 10, subtotalY + 85);
+                // Notes
+                y += 15;
+                doc.text('Notes:', 15, y);
+                doc.text('1. Payment due within 30 days.', 15, y + 5);
+                doc.text('2. Please reference PO number in all correspondence.', 15, y + 10);
 
-                doc.text('Thank You For Your Business !', 105, subtotalY + 100, { align: 'center' });
-
-                doc.text('I agree that all work has been performed to my satisfaction.', 10, subtotalY + 110);
-
-                doc.text('Signature', 10, subtotalY + 130);
-                doc.line(10, subtotalY + 135, 90, subtotalY + 135);
-
-                doc.text('Completed Date', 110, subtotalY + 130);
-                doc.line(110, subtotalY + 135, 190, subtotalY + 135);
-
-                doc.text('Date', 110, subtotalY + 140);
-                doc.line(110, subtotalY + 145, 190, subtotalY + 145);
+                // Footer
+                doc.setFontSize(8);
+                doc.text('Thank you for your business!', 105, y + 20, { align: 'center' });
 
                 const pdfBlob = doc.output('blob');
                 const pdfUrl = URL.createObjectURL(pdfBlob);
@@ -513,7 +490,7 @@
                     // Generate and print PDF
                     generatePDF(orderData);
                     // Reset form
-                    setItems([{ item: '', set: '', imageUrl: '' }]);
+                    setItems([{ item: '', set: '', imageUrl: '', quantity: 1, unitPrice: 0 }]);
                     setDescription('');
                     setOrderNumber('');
                     setOrderType('pickup');
@@ -694,6 +671,20 @@
                                         onChange={e => updateItem(index, 'imageUrl', e.target.value)} 
                                         placeholder="Image URL" 
                                     />
+                                    <input 
+                                        type="number" 
+                                        value={it.quantity} 
+                                        onChange={e => updateItem(index, 'quantity', parseInt(e.target.value) || 1)} 
+                                        min="1" 
+                                        placeholder="Quantity" 
+                                    />
+                                    <input 
+                                        type="number" 
+                                        value={it.unitPrice} 
+                                        onChange={e => updateItem(index, 'unitPrice', parseFloat(e.target.value) || 0)} 
+                                        step="0.01" 
+                                        placeholder="Unit Price ($)" 
+                                    />
                                     {index > 0 && <button className="remove-item-button" onClick={() => removeItemRow(index)}>Remove</button>}
                                 </div>
                             ))}
@@ -839,7 +830,7 @@
                                         <option value="">Select Set</option>
                                         {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
-                                    <button className="archive-button" style={{width: 'auto', marginLeft: '10px'}} onClick={handleArchiveAll}>Archive</button>
+                                    <button className="archive-button" style={{width: 'auto', margin-left: '10px'}} onClick={handleArchiveAll}>Archive</button>
                                 </div>
                             )}
                             <ul className="order-list">

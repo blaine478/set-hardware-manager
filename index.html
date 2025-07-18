@@ -230,11 +230,6 @@
             margin-top: 20px;
             width: auto;
         }
-        .no-orders {
-            text-align: center;
-            color: #6e6e73;
-            margin-top: 20px;
-        }
     </style>
 </head>
 <body>
@@ -288,7 +283,7 @@
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
             const emailjsServiceId = 'service_bg5walm'; // Provided service ID
-            const emailjsTemplateId = 'template_0r8gx2v'; // Template ID I set up
+            const emailjsTemplateId = 'template_0r8gx2v'; // Template ID
             const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Provided public key
 
             const firebaseConfig = {
@@ -457,7 +452,8 @@
                     setStore('');
                     setRecipient('');
                 } catch (err) {
-                    setError('Failed to place order: ' + err.message);
+                    setError('Failed to place order: ' + (err.message || 'Unknown error'));
+                    console.error(err);
                 }
             };
 
@@ -771,50 +767,46 @@
                                     <button className="archive-button" style={{width: 'auto', marginLeft: '10px'}} onClick={handleArchiveAll}>Archive</button>
                                 </div>
                             )}
-                            {filteredOrders.length === 0 ? (
-                                <p className="no-orders">No orders in this tab.</p>
-                            ) : (
-                                <ul className="order-list">
-                                    {filteredOrders.map(order => (
-                                        <li key={order.id} className="order-item">
-                                            <div className="order-summary">
-                                                <span>Order #{order.orderNumber} for {order.recipient}</span>
-                                                <button className="expand-button" onClick={() => setSelectedOrder(order)}>
-                                                    Expand
-                                                </button>
-                                            </div>
-                                            <div className="order-details">
-                                                <p>Items: {order.items.map(it => it.item).join(', ')}</p>
-                                                <p>{order.type === 'pickup' ? `Pickup: ${order.pickupDate}` : `Delivery: ${order.deliveryStartDate} - ${order.deliveryEndDate}`}</p>
-                                                <p>Store: {order.store}</p>
-                                                {order.receivedBy && <p>Received By: {order.receivedBy}</p>}
-                                            </div>
-                                            {tab === 'Incoming' && (
-                                                <>
-                                                    <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
-                                                    {receivingOrderId === order.id && (
-                                                        <div className="receive-dropdown">
-                                                            <select value={receivedByName} onChange={e => setReceivedByName(e.target.value)}>
-                                                                <option value="">Select Receiver</option>
-                                                                {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-                                                            </select>
-                                                            <button onClick={() => confirmReceived(order.id)}>Confirm</button>
-                                                        </div>
-                                                    )}
-                                                </>
-                                            )}
-                                            {tab === 'Received' && (
-                                                <>
-                                                    <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>
-                                                    <button className="undo-button" onClick={() => updateStatus(order.id, 'ordered')}>Undo</button>
-                                                </>
-                                            )}
-                                            {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
-                                            <button className="delete-button-order" onClick={() => deleteOrder(order.id)}>Delete</button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
+                            <ul className="order-list">
+                                {filteredOrders.map(order => (
+                                    <li key={order.id} className="order-item">
+                                        <div className="order-summary">
+                                            <span>Order #{order.orderNumber} for {order.recipient}</span>
+                                            <button className="expand-button" onClick={() => setSelectedOrder(order)}>
+                                                Expand
+                                            </button>
+                                        </div>
+                                        <div className="order-details">
+                                            <p>Items: {order.items.map(it => it.item).join(', ')}</p>
+                                            <p>{order.type === 'pickup' ? `Pickup: ${order.pickupDate}` : `Delivery: ${order.deliveryStartDate} - ${order.deliveryEndDate}`}</p>
+                                            <p>Store: {order.store}</p>
+                                            {order.receivedBy && <p>Received By: {order.receivedBy}</p>}
+                                        </div>
+                                        {tab === 'Incoming' && (
+                                            <>
+                                                <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
+                                                {receivingOrderId === order.id && (
+                                                    <div className="receive-dropdown">
+                                                        <select value={receivedByName} onChange={e => setReceivedByName(e.target.value)}>
+                                                            <option value="">Select Receiver</option>
+                                                            {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                                        </select>
+                                                        <button onClick={() => confirmReceived(order.id)}>Confirm</button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                        {tab === 'Received' && (
+                                            <>
+                                                <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>
+                                                <button className="undo-button" onClick={() => updateStatus(order.id, 'ordered')}>Undo</button>
+                                            </>
+                                        )}
+                                        {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
+                                        <button className="delete-button-order" onClick={() => deleteOrder(order.id)}>Delete</button>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     )}
                     {selectedOrder && (

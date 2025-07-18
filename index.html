@@ -1,50 +1,371 @@
-margin-top: 20px;
-width: auto;
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardware Tracker</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f7;
+            margin: 0;
+            padding: 0;
+            color: #1d1d1f;
+        }
+        #root {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+        .tabs {
+            display: flex;
+            justify-content: space-around;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 500;
+            color: #007aff;
+            transition: background-color 0.3s;
+        }
+        .tab.active {
+            background-color: #007aff;
+            color: #ffffff;
+        }
+        .form, .order-list, .settings-section {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .input-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .item-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .item-row input, .item-row select {
+            flex: 1;
+            margin-right: 10px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #d2d2d7;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        textarea {
+            height: 100px;
+        }
+        label {
+            margin-right: 20px;
+        }
+        button {
+            background-color: #007aff;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            width: auto;
+            margin: 5px 0;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .order-button {
+            width: 100%;
+            padding: 12px;
+        }
+        .add-item-button {
+            padding: 10px 20px;
+            margin-left: 10px;
+        }
+        .remove-item-button {
+            background-color: #ff3b30;
+            padding: 10px;
+            margin-left: 10px;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li.order-item {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .order-summary {
+            margin-bottom: 10px;
+        }
+        .order-details {
+            font-size: 14px;
+            color: #6e6e73;
+        }
+        .expand-button {
+            background-color: #007aff;
+            padding: 6px 12px;
+            margin-left: 10px;
+        }
+        .status-button, .archive-button, .undo-button, .delete-button-order {
+            margin-top: 10px;
+            margin-right: 5px;
+        }
+        .status-button {
+            background-color: #34c759;
+        }
+        .archive-button {
+            background-color: #ff9500;
+        }
+        .undo-button {
+            background-color: #ff9500;
+        }
+        .delete-button-order {
+            background-color: #ff3b30;
+        }
+        .error {
+            color: #ff3b30;
+            text-align: center;
+        }
+        .loading {
+            text-align: center;
+            font-size: 18px;
+            color: #007aff;
+        }
+        .delete-button {
+            background-color: #ff3b30;
+            padding: 4px 8px;
+            margin-left: 10px;
+            font-size: 12px;
+            border-radius: 4px;
+        }
+        .delete-button:hover {
+            background-color: #d9362b;
+        }
+        .receive-dropdown {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .receive-dropdown select {
+            flex: 1;
+            margin-right: 10px;
+        }
+        .receive-dropdown button {
+            padding: 8px 16px;
+            background-color: #34c759;
+        }
+        .archive-all {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .archive-all label {
+            margin-right: 10px;
+        }
+        .archive-all select {
+            flex: 1;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+        }
+        .filter-group input {
+            margin-bottom: 10px;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            font-size: 18px;
+        }
+        .modal-close {
+            background-color: #ff3b30;
+            padding: 8px 16px;
+            margin-top: 20px;
+            width: auto;
+        }
         .print-pdf-button {
             background-color: #5ac8fa;
             margin-top: 10px;
             margin-right: 5px;
         }
-</style>
+    </style>
 </head>
 <body>
-@@ -320,17 +325,17 @@
+    <div id="root"></div>
 
-useEffect(() => {
-if (user) {
-                    const unsubscribeOrders = db.collection('orders').where('orderedBy', '==', user.uid).onSnapshot(snapshot => {
+    <!-- React and Babel CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- jsPDF CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Firebase Compat CDNs for namespaced API -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-firestore-compat.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [tab, setTab] = useState('Incoming');
+            const [orders, setOrders] = useState([]);
+            const [sets, setSets] = useState([]);
+            const [receivers, setReceivers] = useState([]);
+            const [newSetName, setNewSetName] = useState('');
+            const [newReceiverName, setNewReceiverName] = useState('');
+            const [items, setItems] = useState([{ item: '', set: '', imageUrl: '' }]);
+            const [description, setDescription] = useState('');
+            const [orderNumber, setOrderNumber] = useState('');
+            const [orderType, setOrderType] = useState('pickup');
+            const [pickupDate, setPickupDate] = useState('');
+            const [deliveryStartDate, setDeliveryStartDate] = useState('');
+            const [deliveryEndDate, setDeliveryEndDate] = useState('');
+            const [store, setStore] = useState('');
+            const [recipient, setRecipient] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [selectedOrder, setSelectedOrder] = useState(null);
+            const [receivingOrderId, setReceivingOrderId] = useState(null);
+            const [receivedByName, setReceivedByName] = useState('');
+            const [archiveSet, setArchiveSet] = useState('');
+            const [filterSet, setFilterSet] = useState('');
+            const [filterItem, setFilterItem] = useState('');
+            const [filterDescription, setFilterDescription] = useState('');
+
+            const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
+
+            const firebaseConfig = {
+                apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
+                authDomain: "set-hardware.firebaseapp.com",
+                projectId: "set-hardware",
+                storageBucket: "set-hardware.appspot.com",
+                messagingSenderId: "613195230835",
+                appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
+            };
+
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+
+            const auth = firebase.auth();
+            const db = firebase.firestore();
+
+            useEffect(() => {
+                const handleAuth = () => {
+                    auth.signInAnonymously()
+                        .then(() => setLoading(false))
+                        .catch(err => {
+                            setError(err.message);
+                            setLoading(false);
+                        });
+                };
+
+                const unsubscribe = auth.onAuthStateChanged(currentUser => {
+                    setUser(currentUser);
+                    if (!currentUser) {
+                        handleAuth();
+                    } else {
+                        setLoading(false);
+                    }
+                });
+
+                return unsubscribe;
+            }, []);
+
+            useEffect(() => {
+                if (user) {
                     const unsubscribeOrders = db.collection('orders').onSnapshot(snapshot => {
-const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-setOrders(data);
-});
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setOrders(data);
+                    });
 
-                    const unsubscribeSets = db.collection('sets').where('userId', '==', user.uid).onSnapshot(snapshot => {
                     const unsubscribeSets = db.collection('sets').onSnapshot(snapshot => {
-const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-setSets(data);
-});
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setSets(data);
+                    });
 
-                    const unsubscribeReceivers = db.collection('receivers').where('userId', '==', user.uid).onSnapshot(snapshot => {
                     const unsubscribeReceivers = db.collection('receivers').onSnapshot(snapshot => {
-const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-setReceivers(data);
-});
-@@ -361,21 +366,124 @@
-const generatePDF = (orderData) => {
-const { jsPDF } = window.jspdf;
-const doc = new jsPDF();
-                doc.text('Hardware Order Details', 10, 10);
-                doc.text(`Order Number: ${orderData.orderNumber}`, 10, 20);
-                doc.text(`Recipient: ${orderData.recipient}`, 10, 30);
-                doc.text(`Store/Shipper: ${orderData.store}`, 10, 40);
-                doc.text(`Type: ${orderData.type}`, 10, 50);
-                if (orderData.type === 'pickup') {
-                    doc.text(`Pickup Date: ${orderData.pickupDate}`, 10, 60);
-                } else {
-                    doc.text(`Delivery Dates: ${orderData.deliveryStartDate} to ${orderData.deliveryEndDate}`, 10, 60);
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setReceivers(data);
+                    });
+
+                    return () => {
+                        unsubscribeOrders();
+                        unsubscribeSets();
+                        unsubscribeReceivers();
+                    };
                 }
-                doc.text('Items:', 10, 70);
+            }, [user]);
+
+            const addItemRow = () => {
+                setItems([...items, { item: '', set: '', imageUrl: '' }]);
+            };
+
+            const removeItemRow = (index) => {
+                const newItems = items.filter((_, i) => i !== index);
+                setItems(newItems);
+            };
+
+            const updateItem = (index, field, value) => {
+                const newItems = [...items];
+                newItems[index][field] = value;
+                setItems(newItems);
+            };
+
+            const generatePDF = (orderData) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
                 doc.setFontSize(18);
                 doc.text('Hardware Tracker', 105, 20, { align: 'center' });
                 doc.setFontSize(12);
@@ -112,16 +433,14 @@ const doc = new jsPDF();
                 doc.text('TOTAL', 167, 114);
                 doc.setTextColor(0, 0, 0);
 
-orderData.items.forEach((it, idx) => {
-                    doc.text(`- ${it.item} (Set: ${it.set})`, 10, 80 + (idx * 10));
+                orderData.items.forEach((it, idx) => {
                     const y = 120 + (idx * 10);
                     doc.text('1', 12, y);
                     doc.text(it.item + ' (Set: ' + it.set + ')', 32, y);
                     doc.text('', 112, y); // No tax
                     doc.text('', 132, y); // No price
                     doc.text('', 167, y); // No total
-});
-                doc.text(`Description: ${orderData.description}`, 10, 80 + (orderData.items.length * 10));
+                });
 
                 const subtotalY = 120 + (orderData.items.length * 10);
                 doc.text('SUBTOTAL', 132, subtotalY);
@@ -165,6 +484,440 @@ orderData.items.forEach((it, idx) => {
                 doc.text('Date', 110, subtotalY + 140);
                 doc.line(110, subtotalY + 145, 190, subtotalY + 145);
 
-const pdfBlob = doc.output('blob');
-const pdfUrl = URL.createObjectURL(pdfBlob);
-const printWindow = window.open(pdfUrl);
+                const pdfBlob = doc.output('blob');
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+                const printWindow = window.open(pdfUrl);
+                printWindow.print();
+            };
+
+            const handleOrder = async () => {
+                try {
+                    const orderData = {
+                        items,
+                        description,
+                        orderNumber,
+                        type: orderType,
+                        store,
+                        recipient,
+                        orderedBy: user.uid,
+                        status: 'ordered',
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    if (orderType === 'pickup') {
+                        orderData.pickupDate = pickupDate;
+                    } else {
+                        orderData.deliveryStartDate = deliveryStartDate;
+                        orderData.deliveryEndDate = deliveryEndDate;
+                    }
+                    const docRef = await db.collection('orders').add(orderData);
+                    // Generate and print PDF
+                    generatePDF(orderData);
+                    // Reset form
+                    setItems([{ item: '', set: '', imageUrl: '' }]);
+                    setDescription('');
+                    setOrderNumber('');
+                    setOrderType('pickup');
+                    setPickupDate('');
+                    setDeliveryStartDate('');
+                    setDeliveryEndDate('');
+                    setStore('');
+                    setRecipient('');
+                } catch (err) {
+                    setError('Failed to place order: ' + err.message);
+                }
+            };
+
+            const updateStatus = async (id, newStatus) => {
+                try {
+                    await db.collection('orders').doc(id).update({ status: newStatus });
+                } catch (err) {
+                    setError('Failed to update status: ' + err.message);
+                }
+            };
+
+            const deleteOrder = async (id) => {
+                if (window.confirm('Are you sure you want to delete this order?')) {
+                    try {
+                        await db.collection('orders').doc(id).delete();
+                    } catch (err) {
+                        setError('Failed to delete order: ' + err.message);
+                    }
+                }
+            };
+
+            const startReceiving = (id) => {
+                setReceivingOrderId(id);
+                setReceivedByName('');
+            };
+
+            const confirmReceived = async (id) => {
+                if (receivedByName && window.confirm(`Mark as received by ${receivedByName}?`)) {
+                    try {
+                        await db.collection('orders').doc(id).update({
+                            status: 'received',
+                            receivedBy: receivedByName
+                        });
+                        setReceivingOrderId(null);
+                    } catch (err) {
+                        setError('Failed to mark received: ' + err.message);
+                    }
+                }
+            };
+
+            const archiveOrdersWithSet = async (setName) => {
+                const ordersToArchive = orders.filter(order => 
+                    order.items && Array.isArray(order.items) && order.items.some(item => item.set === setName)
+                );
+                for (const order of ordersToArchive) {
+                    await updateStatus(order.id, 'archived');
+                }
+            };
+
+            const addSet = async () => {
+                if (newSetName.trim()) {
+                    try {
+                        await db.collection('sets').add({
+                            name: newSetName,
+                            userId: user.uid
+                        });
+                        setNewSetName('');
+                    } catch (err) {
+                        setError('Failed to add set: ' + err.message);
+                    }
+                }
+            };
+
+            const deleteSet = async (id, setName) => {
+                try {
+                    await db.collection('sets').doc(id).delete();
+                    await archiveOrdersWithSet(setName);
+                } catch (err) {
+                    setError('Failed to delete set: ' + err.message);
+                }
+            };
+
+            const addReceiver = async () => {
+                if (newReceiverName.trim()) {
+                    try {
+                        await db.collection('receivers').add({
+                            name: newReceiverName,
+                            userId: user.uid
+                        });
+                        setNewReceiverName('');
+                    } catch (err) {
+                        setError('Failed to add receiver: ' + err.message);
+                    }
+                }
+            };
+
+            const deleteReceiver = async (id) => {
+                try {
+                    await db.collection('receivers').doc(id).delete();
+                } catch (err) {
+                    setError('Failed to delete receiver: ' + err.message);
+                }
+            };
+
+            const handleSetKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    addSet();
+                }
+            };
+
+            const handleReceiverKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    addReceiver();
+                }
+            };
+
+            const handleArchiveAll = async () => {
+                if (archiveSet) {
+                    await archiveOrdersWithSet(archiveSet);
+                    setArchiveSet('');
+                }
+            };
+
+            const filteredOrders = orders.filter(order => {
+                if (tab === 'Incoming') return order.status === 'ordered';
+                if (tab === 'Received') return order.status === 'received';
+                if (tab === 'Archived') return order.status === 'archived';
+                return false;
+            }).filter(order => {
+                if (tab !== 'Received' && tab !== 'Archived') return true;
+                const matchesSet = !filterSet || (order.items && order.items.some(item => item.set.toLowerCase().includes(filterSet.toLowerCase())));
+                const matchesItem = !filterItem || (order.items && order.items.some(item => item.item.toLowerCase().includes(filterItem.toLowerCase())));
+                const matchesDescription = !filterDescription || (order.description && order.description.toLowerCase().includes(filterDescription.toLowerCase()));
+                return matchesSet && matchesItem && matchesDescription;
+            });
+
+            if (loading) {
+                return <div className="loading">Loading...</div>;
+            }
+
+            if (error) {
+                return <p className="error">{error}</p>;
+            }
+
+            return (
+                <div>
+                    <h1>Hardware Tracker</h1>
+                    <div className="tabs">
+                        {['Incoming', 'Received', 'Archived', 'Order', 'Settings'].map(t => (
+                            <div
+                                key={t}
+                                className={`tab ${tab === t ? 'active' : ''}`}
+                                onClick={() => setTab(t)}
+                            >
+                                {t}
+                            </div>
+                        ))}
+                    </div>
+                    {tab === 'Order' ? (
+                        <div className="form">
+                            <h2>Items</h2>
+                            {items.map((it, index) => (
+                                <div key={index} className="item-row">
+                                    <input 
+                                        value={it.item} 
+                                        onChange={e => updateItem(index, 'item', e.target.value)} 
+                                        placeholder="Item" 
+                                    />
+                                    <select 
+                                        value={it.set} 
+                                        onChange={e => updateItem(index, 'set', e.target.value)}
+                                    >
+                                        <option value="">Select Set</option>
+                                        {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                    <input 
+                                        value={it.imageUrl} 
+                                        onChange={e => updateItem(index, 'imageUrl', e.target.value)} 
+                                        placeholder="Image URL" 
+                                    />
+                                    {index > 0 && <button className="remove-item-button" onClick={() => removeItemRow(index)}>Remove</button>}
+                                </div>
+                            ))}
+                            <button className="add-item-button" onClick={addItemRow}>Add Item</button>
+
+                            <textarea 
+                                value={description} 
+                                onChange={e => setDescription(e.target.value)} 
+                                placeholder="Description" 
+                            />
+
+                            <input 
+                                value={orderNumber} 
+                                onChange={e => setOrderNumber(e.target.value)} 
+                                placeholder="Order Number" 
+                            />
+
+                            <div>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        value="pickup" 
+                                        checked={orderType === 'pickup'} 
+                                        onChange={e => setOrderType(e.target.value)} 
+                                    />
+                                    Pickup
+                                </label>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        value="delivery" 
+                                        checked={orderType === 'delivery'} 
+                                        onChange={e => setOrderType(e.target.value)} 
+                                    />
+                                    Delivery
+                                </label>
+                            </div>
+
+                            {orderType === 'pickup' ? (
+                                <input 
+                                    type="date" 
+                                    value={pickupDate} 
+                                    onChange={e => setPickupDate(e.target.value)} 
+                                />
+                            ) : (
+                                <>
+                                    <input 
+                                        type="date" 
+                                        value={deliveryStartDate} 
+                                        onChange={e => setDeliveryStartDate(e.target.value)} 
+                                        placeholder="Delivery Start Date" 
+                                    />
+                                    <input 
+                                        type="date" 
+                                        value={deliveryEndDate} 
+                                        onChange={e => setDeliveryEndDate(e.target.value)} 
+                                        placeholder="Delivery End Date" 
+                                    />
+                                </>
+                            )}
+
+                            <input 
+                                value={store} 
+                                onChange={e => setStore(e.target.value)} 
+                                placeholder="Store/Shipper" 
+                            />
+
+                            <select 
+                                value={recipient} 
+                                onChange={e => setRecipient(e.target.value)}
+                            >
+                                <option value="">Select Recipient</option>
+                                {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                            </select>
+
+                            <button className="order-button" onClick={handleOrder}>Place Order</button>
+                        </div>
+                    ) : tab === 'Settings' ? (
+                        <div className="settings-section">
+                            <h2>Set Names</h2>
+                            <div className="input-group">
+                                <input 
+                                    value={newSetName} 
+                                    onChange={e => setNewSetName(e.target.value)} 
+                                    onKeyDown={handleSetKeyDown}
+                                    placeholder="New Set Name" 
+                                />
+                                <button className="add-item-button" onClick={addSet}>Add</button>
+                            </div>
+                            <ul>
+                                {sets.map(s => (
+                                    <li key={s.id}>
+                                        {s.name}
+                                        <button className="delete-button" onClick={() => deleteSet(s.id, s.name)}>Delete</button>
+                                    </li>
+                                ))}
+                            </ul>
+
+                            <h2>Receiver Names</h2>
+                            <div className="input-group">
+                                <input 
+                                    value={newReceiverName} 
+                                    onChange={e => setNewReceiverName(e.target.value)} 
+                                    onKeyDown={handleReceiverKeyDown}
+                                    placeholder="New Receiver Name" 
+                                />
+                                <button className="add-item-button" onClick={addReceiver}>Add</button>
+                            </div>
+                            <ul>
+                                {receivers.map(r => (
+                                    <li key={r.id}>
+                                        {r.name}
+                                        <button className="delete-button" onClick={() => deleteReceiver(r.id)}>Delete</button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : (
+                        <div>
+                            {(tab === 'Received' || tab === 'Archived') && (
+                                <div className="filter-group">
+                                    <input 
+                                        value={filterSet} 
+                                        onChange={e => setFilterSet(e.target.value)} 
+                                        placeholder="Filter by Set" 
+                                    />
+                                    <input 
+                                        value={filterItem} 
+                                        onChange={e => setFilterItem(e.target.value)} 
+                                        placeholder="Filter by Item Name" 
+                                    />
+                                    <input 
+                                        value={filterDescription} 
+                                        onChange={e => setFilterDescription(e.target.value)} 
+                                        placeholder="Filter by Description" 
+                                    />
+                                </div>
+                            )}
+                            {tab === 'Received' && (
+                                <div className="archive-all">
+                                    <label>Archive All:</label>
+                                    <select value={archiveSet} onChange={e => setArchiveSet(e.target.value)}>
+                                        <option value="">Select Set</option>
+                                        {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                    <button className="archive-button" style={{width: 'auto', marginLeft: '10px'}} onClick={handleArchiveAll}>Archive</button>
+                                </div>
+                            )}
+                            <ul className="order-list">
+                                {filteredOrders.map(order => (
+                                    <li key={order.id} className="order-item">
+                                        <div className="order-summary">
+                                            <span>Order #{order.orderNumber} for {order.recipient}</span>
+                                            <button className="expand-button" onClick={() => setSelectedOrder(order)}>
+                                                Expand
+                                            </button>
+                                        </div>
+                                        <div className="order-details">
+                                            <p>Items: {order.items.map(it => it.item).join(', ')}</p>
+                                            <p>{order.type === 'pickup' ? `Pickup: ${order.pickupDate}` : `Delivery: ${order.deliveryStartDate} - ${order.deliveryEndDate}`}</p>
+                                            <p>Store: {order.store}</p>
+                                            {order.receivedBy && <p>Received By: {order.receivedBy}</p>}
+                                        </div>
+                                        {tab === 'Incoming' && (
+                                            <>
+                                                <button className="status-button" onClick={() => startReceiving(order.id)}>Received By</button>
+                                                {receivingOrderId === order.id && (
+                                                    <div className="receive-dropdown">
+                                                        <select value={receivedByName} onChange={e => setReceivedByName(e.target.value)}>
+                                                            <option value="">Select Receiver</option>
+                                                            {receivers.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                                        </select>
+                                                        <button onClick={() => confirmReceived(order.id)}>Confirm</button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                        {tab === 'Received' && (
+                                            <>
+                                                <button className="archive-button" onClick={() => updateStatus(order.id, 'archived')}>Archive</button>
+                                                <button className="undo-button" onClick={() => updateStatus(order.id, 'ordered')}>Undo</button>
+                                            </>
+                                        )}
+                                        {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
+                                        <button className="delete-button-order" onClick={() => deleteOrder(order.id)}>Delete</button>
+                                        <button className="print-pdf-button" onClick={() => generatePDF(order)}>Print PDF</button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {selectedOrder && (
+                        <div className="modal" onClick={() => setSelectedOrder(null)}>
+                            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                <h2>Order Details</h2>
+                                <p><strong>Order #:</strong> {selectedOrder.orderNumber}</p>
+                                <p><strong>Recipient:</strong> {selectedOrder.recipient}</p>
+                                <p><strong>Items:</strong></p>
+                                <ul>
+                                    {selectedOrder.items.map((it, idx) => (
+                                        <li key={idx}>
+                                            {it.item} (Set: {it.set})
+                                            {it.imageUrl && <img src={it.imageUrl} alt={it.item} className="item-image" />}
+                                        </li>
+                                    ))}
+                                </ul>
+                                <p><strong>Description:</strong> {selectedOrder.description}</p>
+                                <p><strong>Type:</strong> {selectedOrder.type}</p>
+                                {selectedOrder.type === 'pickup' ? (
+                                    <p><strong>Pickup Date:</strong> {selectedOrder.pickupDate}</p>
+                                ) : (
+                                    <p><strong>Delivery Dates:</strong> {selectedOrder.deliveryStartDate} to {selectedOrder.deliveryEndDate}</p>
+                                )}
+                                <p><strong>Store/Shipper:</strong> {selectedOrder.store}</p>
+                                {selectedOrder.receivedBy && <p><strong>Received By:</strong> {selectedOrder.receivedBy}</p>}
+                                <button className="modal-close" onClick={() => setSelectedOrder(null)}>Close</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

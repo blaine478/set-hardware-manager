@@ -243,9 +243,6 @@
     <!-- jsPDF CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- EmailJS CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
     <!-- Firebase Compat CDNs for namespaced API -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
@@ -282,9 +279,6 @@
             const [filterDescription, setFilterDescription] = useState('');
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
-            const emailjsServiceId = 'service_bg5walm'; // Provided service ID
-            const emailjsTemplateId = 'template_0r8gx2v'; // Template ID
-            const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Provided public key
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -303,7 +297,6 @@
             const db = firebase.firestore();
 
             useEffect(() => {
-                emailjs.init(emailjsPublicKey); // Initialize EmailJS with public key
                 const handleAuth = () => {
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
@@ -365,28 +358,7 @@
                 setItems(newItems);
             };
 
-            const generatePDFBase64 = (orderData) => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                doc.text('Hardware Order Details', 10, 10);
-                doc.text(`Order Number: ${orderData.orderNumber}`, 10, 20);
-                doc.text(`Recipient: ${orderData.recipient}`, 10, 30);
-                doc.text(`Store/Shipper: ${orderData.store}`, 10, 40);
-                doc.text(`Type: ${orderData.type}`, 10, 50);
-                if (orderData.type === 'pickup') {
-                    doc.text(`Pickup Date: ${orderData.pickupDate}`, 10, 60);
-                } else {
-                    doc.text(`Delivery Dates: ${orderData.deliveryStartDate} to ${orderData.deliveryEndDate}`, 10, 60);
-                }
-                doc.text('Items:', 10, 70);
-                orderData.items.forEach((it, idx) => {
-                    doc.text(`- ${it.item} (Set: ${it.set})`, 10, 80 + (idx * 10));
-                });
-                doc.text(`Description: ${orderData.description}`, 10, 80 + (orderData.items.length * 10));
-                return doc.output('datauristring').split(',')[1]; // Base64 string
-            };
-
-            const generatePDFForPrint = (orderData) => {
+            const generatePDF = (orderData) => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 doc.text('Hardware Order Details', 10, 10);
@@ -430,17 +402,12 @@
                         orderData.deliveryEndDate = deliveryEndDate;
                     }
                     const docRef = await db.collection('orders').add(orderData);
-                    // Generate PDF base64 for email
-                    const pdfBase64 = generatePDFBase64(orderData);
-                    // Send email with EmailJS
-                    await emailjs.send(emailjsServiceId, emailjsTemplateId, {
-                        subject: `Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`,
-                        body: `Summary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}`,
-                        attachment: pdfBase64,
-                        filename: `order_${orderNumber}.pdf`
-                    });
-                    // Auto print PDF
-                    generatePDFForPrint(orderData);
+                    // Generate and print PDF
+                    generatePDF(orderData);
+                    // Email to buyer
+                    const subject = encodeURIComponent(`Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`);
+                    const body = encodeURIComponent(`Summary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}\n\nAttach the downloaded PDF for full details.`);
+                    window.location.href = `mailto:${buyerEmail}?subject=${subject}&body=${body}`;
                     // Reset form
                     setItems([{ item: '', set: '' }]);
                     setDescription('');
@@ -452,8 +419,7 @@
                     setStore('');
                     setRecipient('');
                 } catch (err) {
-                    setError('Failed to place order: ' + (err.message || 'Unknown error'));
-                    console.error(err);
+                    setError('Failed to place order: ' + err.message);
                 }
             };
 

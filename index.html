@@ -243,6 +243,9 @@
     <!-- jsPDF CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
+    <!-- EmailJS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
     <!-- Firebase Compat CDNs for namespaced API -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
@@ -279,6 +282,9 @@
             const [filterDescription, setFilterDescription] = useState('');
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
+            const emailjsServiceId = 'service_bg5walm'; // Provided service ID
+            const emailjsTemplateId = 'template_0r8gx2v'; // Template ID
+            const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Provided public key
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
@@ -297,6 +303,7 @@
             const db = firebase.firestore();
 
             useEffect(() => {
+                emailjs.init(emailjsPublicKey); // Initialize EmailJS with public key
                 const handleAuth = () => {
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
@@ -358,7 +365,7 @@
                 setItems(newItems);
             };
 
-            const generatePDF = (orderData) => {
+            const generatePDFForPrint = (orderData) => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 doc.text('Hardware Order Details', 10, 10);
@@ -402,12 +409,13 @@
                         orderData.deliveryEndDate = deliveryEndDate;
                     }
                     const docRef = await db.collection('orders').add(orderData);
-                    // Generate and print PDF
-                    generatePDF(orderData);
-                    // Email to buyer
-                    const subject = encodeURIComponent(`Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`);
-                    const body = encodeURIComponent(`Summary:\nItems: ${items.map(it => `${it.item} (Set: ${it.set})`).join('\n')}\nDescription: ${description}\nOrder Number: ${orderNumber}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\nStore: ${store}\nRecipient: ${recipient}\n\nAttach the downloaded PDF for full details.`);
-                    window.location.href = `mailto:${buyerEmail}?subject=${subject}&body=${body}`;
+                    // Auto print PDF
+                    generatePDFForPrint(orderData);
+                    // Send email with EmailJS (no attachment)
+                    await emailjs.send(emailjsServiceId, emailjsTemplateId, {
+                        subject: `Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`,
+                        body: `Hardware Order Details\n\nOrder Number: ${orderNumber}\nRecipient: ${recipient}\nStore/Shipper: ${store}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\n\nItems:\n${items.map(it => `- ${it.item} (Set: ${it.set})`).join('\n')}\n\nDescription: ${description}`
+                    });
                     // Reset form
                     setItems([{ item: '', set: '' }]);
                     setDescription('');

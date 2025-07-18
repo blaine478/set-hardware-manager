@@ -71,9 +71,6 @@
             flex: 1;
             margin-right: 10px;
         }
-        input[type="file"] {
-            margin-top: 5px;
-        }
         input, select, textarea {
             width: 100%;
             padding: 10px;
@@ -139,7 +136,7 @@
             padding: 6px 12px;
             margin-left: 10px;
         }
-        .status-button, .archive-button, .undo-button, .delete-button-order, .print-pdf-button {
+        .status-button, .archive-button, .undo-button, .delete-button-order {
             margin-top: 10px;
             margin-right: 5px;
         }
@@ -154,9 +151,6 @@
         }
         .delete-button-order {
             background-color: #ff3b30;
-        }
-        .print-pdf-button {
-            background-color: #5ac8fa;
         }
         .error {
             color: #ff3b30;
@@ -236,10 +230,6 @@
             margin-top: 20px;
             width: auto;
         }
-        .item-image {
-            max-width: 100px;
-            margin-top: 5px;
-        }
     </style>
 </head>
 <body>
@@ -257,7 +247,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-firestore-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-storage-compat.js"></script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -270,7 +259,7 @@
             const [receivers, setReceivers] = useState([]);
             const [newSetName, setNewSetName] = useState('');
             const [newReceiverName, setNewReceiverName] = useState('');
-            const [items, setItems] = useState([{ item: '', set: '', image: null, imageUrl: '' }]);
+            const [items, setItems] = useState([{ item: '', set: '', imageUrl: '' }]);
             const [description, setDescription] = useState('');
             const [orderNumber, setOrderNumber] = useState('');
             const [orderType, setOrderType] = useState('pickup');
@@ -306,7 +295,6 @@
 
             const auth = firebase.auth();
             const db = firebase.firestore();
-            const storage = firebase.storage();
 
             useEffect(() => {
                 const handleAuth = () => {
@@ -356,7 +344,7 @@
             }, [user]);
 
             const addItemRow = () => {
-                setItems([...items, { item: '', set: '', image: null, imageUrl: '' }]);
+                setItems([...items, { item: '', set: '', imageUrl: '' }]);
             };
 
             const removeItemRow = (index) => {
@@ -368,19 +356,6 @@
                 const newItems = [...items];
                 newItems[index][field] = value;
                 setItems(newItems);
-            };
-
-            const updateItemImage = (index, file) => {
-                const newItems = [...items];
-                newItems[index].image = file;
-                setItems(newItems);
-            };
-
-            const uploadImage = async (file) => {
-                if (!file) return '';
-                const storageRef = storage.ref(`images/${file.name}`);
-                await storageRef.put(file);
-                return await storageRef.getDownloadURL();
             };
 
             const generatePDF = (orderData) => {
@@ -409,21 +384,8 @@
 
             const handleOrder = async () => {
                 try {
-                    const uploadedImageUrls = await Promise.all(items.map(async (item) => {
-                        if (item.image) {
-                            return await uploadImage(item.image);
-                        }
-                        return '';
-                    }));
-
-                    const orderItems = items.map((item, index) => ({
-                        item: item.item,
-                        set: item.set,
-                        imageUrl: uploadedImageUrls[index]
-                    }));
-
                     const orderData = {
-                        items: orderItems,
+                        items,
                         description,
                         orderNumber,
                         type: orderType,
@@ -443,7 +405,7 @@
                     // Generate and print PDF
                     generatePDF(orderData);
                     // Reset form
-                    setItems([{ item: '', set: '', image: null, imageUrl: '' }]);
+                    setItems([{ item: '', set: '', imageUrl: '' }]);
                     setDescription('');
                     setOrderNumber('');
                     setOrderType('pickup');
@@ -620,9 +582,9 @@
                                         {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
                                     <input 
-                                        type="file" 
-                                        accept="image/*" 
-                                        onChange={e => updateItemImage(index, e.target.files[0])}
+                                        value={it.imageUrl} 
+                                        onChange={e => updateItem(index, 'imageUrl', e.target.value)} 
+                                        placeholder="Image URL" 
                                     />
                                     {index > 0 && <button className="remove-item-button" onClick={() => removeItemRow(index)}>Remove</button>}
                                 </div>

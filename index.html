@@ -71,6 +71,9 @@
             flex: 1;
             margin-right: 10px;
         }
+        input[type="file"] {
+            margin-top: 5px;
+        }
         input, select, textarea {
             width: 100%;
             padding: 10px;
@@ -136,7 +139,7 @@
             padding: 6px 12px;
             margin-left: 10px;
         }
-        .status-button, .archive-button, .undo-button, .delete-button-order {
+        .status-button, .archive-button, .undo-button, .delete-button-order, .print-pdf-button {
             margin-top: 10px;
             margin-right: 5px;
         }
@@ -151,6 +154,9 @@
         }
         .delete-button-order {
             background-color: #ff3b30;
+        }
+        .print-pdf-button {
+            background-color: #5ac8fa;
         }
         .error {
             color: #ff3b30;
@@ -230,6 +236,10 @@
             margin-top: 20px;
             width: auto;
         }
+        .item-image {
+            max-width: 100px;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -243,13 +253,11 @@
     <!-- jsPDF CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- EmailJS CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
     <!-- Firebase Compat CDNs for namespaced API -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-app-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-auth-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/11.10.0/firebase-storage-compat.js"></script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -262,7 +270,7 @@
             const [receivers, setReceivers] = useState([]);
             const [newSetName, setNewSetName] = useState('');
             const [newReceiverName, setNewReceiverName] = useState('');
-            const [items, setItems] = useState([{ item: '', set: '' }]);
+            const [items, setItems] = useState([{ item: '', set: '', image: null, imageUrl: '' }]);
             const [description, setDescription] = useState('');
             const [orderNumber, setOrderNumber] = useState('');
             const [orderType, setOrderType] = useState('pickup');
@@ -282,15 +290,12 @@
             const [filterDescription, setFilterDescription] = useState('');
 
             const buyerEmail = 'Blaineelliott478@hotmail.com'; // Buyer's email
-            const emailjsServiceId = 'service_bg5walm'; // Provided service ID
-            const emailjsTemplateId = 'template_0r8gx2v'; // Template ID
-            const emailjsPublicKey = 'ICj93ODAq4-LL3yO5'; // Provided public key
 
             const firebaseConfig = {
                 apiKey: "AIzaSyCRbUS6L7O4I_gGaaCmCyHi7wt_WgMwZFc",
                 authDomain: "set-hardware.firebaseapp.com",
                 projectId: "set-hardware",
-                storageBucket: "set-hardware.firebasestorage.app",
+                storageBucket: "set-hardware.appspot.com",
                 messagingSenderId: "613195230835",
                 appId: "1:613195230835:web:c9e3e78db3e8b99f6ec406"
             };
@@ -301,9 +306,9 @@
 
             const auth = firebase.auth();
             const db = firebase.firestore();
+            const storage = firebase.storage();
 
             useEffect(() => {
-                emailjs.init(emailjsPublicKey); // Initialize EmailJS with public key
                 const handleAuth = () => {
                     auth.signInAnonymously()
                         .then(() => setLoading(false))
@@ -351,7 +356,7 @@
             }, [user]);
 
             const addItemRow = () => {
-                setItems([...items, { item: '', set: '' }]);
+                setItems([...items, { item: '', set: '', image: null, imageUrl: '' }]);
             };
 
             const removeItemRow = (index) => {
@@ -365,7 +370,20 @@
                 setItems(newItems);
             };
 
-            const generatePDFForPrint = (orderData) => {
+            const updateItemImage = (index, file) => {
+                const newItems = [...items];
+                newItems[index].image = file;
+                setItems(newItems);
+            };
+
+            const uploadImage = async (file) => {
+                if (!file) return '';
+                const storageRef = storage.ref(`images/${file.name}`);
+                await storageRef.put(file);
+                return await storageRef.getDownloadURL();
+            };
+
+            const generatePDF = (orderData) => {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 doc.text('Hardware Order Details', 10, 10);
@@ -391,8 +409,21 @@
 
             const handleOrder = async () => {
                 try {
+                    const uploadedImageUrls = await Promise.all(items.map(async (item) => {
+                        if (item.image) {
+                            return await uploadImage(item.image);
+                        }
+                        return '';
+                    }));
+
+                    const orderItems = items.map((item, index) => ({
+                        item: item.item,
+                        set: item.set,
+                        imageUrl: uploadedImageUrls[index]
+                    }));
+
                     const orderData = {
-                        items,
+                        items: orderItems,
                         description,
                         orderNumber,
                         type: orderType,
@@ -409,15 +440,10 @@
                         orderData.deliveryEndDate = deliveryEndDate;
                     }
                     const docRef = await db.collection('orders').add(orderData);
-                    // Auto print PDF
-                    generatePDFForPrint(orderData);
-                    // Send email with EmailJS (no attachment)
-                    await emailjs.send(emailjsServiceId, emailjsTemplateId, {
-                        subject: `Order from ${store}: ${items.map(it => it.item).join(', ')} for sets ${[...new Set(items.map(it => it.set))].join(', ')}`,
-                        body: `Hardware Order Details\n\nOrder Number: ${orderNumber}\nRecipient: ${recipient}\nStore/Shipper: ${store}\nType: ${orderType}\n${orderType === 'pickup' ? `Pickup Date: ${pickupDate}` : `Delivery Dates: ${deliveryStartDate} to ${deliveryEndDate}`}\n\nItems:\n${items.map(it => `- ${it.item} (Set: ${it.set})`).join('\n')}\n\nDescription: ${description}`
-                    });
+                    // Generate and print PDF
+                    generatePDF(orderData);
                     // Reset form
-                    setItems([{ item: '', set: '' }]);
+                    setItems([{ item: '', set: '', image: null, imageUrl: '' }]);
                     setDescription('');
                     setOrderNumber('');
                     setOrderType('pickup');
@@ -593,6 +619,11 @@
                                         <option value="">Select Set</option>
                                         {sets.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        onChange={e => updateItemImage(index, e.target.files[0])}
+                                    />
                                     {index > 0 && <button className="remove-item-button" onClick={() => removeItemRow(index)}>Remove</button>}
                                 </div>
                             ))}
@@ -778,6 +809,7 @@
                                         )}
                                         {tab === 'Archived' && <button className="undo-button" onClick={() => updateStatus(order.id, 'received')}>Undo</button>}
                                         <button className="delete-button-order" onClick={() => deleteOrder(order.id)}>Delete</button>
+                                        <button className="print-pdf-button" onClick={() => generatePDF(order)}>Print PDF</button>
                                     </li>
                                 ))}
                             </ul>
@@ -792,7 +824,10 @@
                                 <p><strong>Items:</strong></p>
                                 <ul>
                                     {selectedOrder.items.map((it, idx) => (
-                                        <li key={idx}>{it.item} (Set: {it.set})</li>
+                                        <li key={idx}>
+                                            {it.item} (Set: {it.set})
+                                            {it.imageUrl && <img src={it.imageUrl} alt={it.item} className="item-image" />}
+                                        </li>
                                     ))}
                                 </ul>
                                 <p><strong>Description:</strong> {selectedOrder.description}</p>
